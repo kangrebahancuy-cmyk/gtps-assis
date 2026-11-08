@@ -2,10 +2,9 @@
 
 An AI-powered development assistant for GTPS Cloud developers.
 
-> **Status: Step 1, UI foundation only.** The app shell, navigation, and page
-> layouts are in place. There is **no AI provider, no documentation scraper,
-> and no Lua generator yet**. Controls that depend on them are disabled and
-> labelled as unavailable.
+> **Status: Step 2 (documentation scraper) added on top of the Step 1 UI.**
+> There is **no AI provider and no Lua generator yet**. Controls that depend
+> on them are disabled and labelled as unavailable.
 
 ## Tech stack
 
@@ -18,7 +17,7 @@ An AI-powered development assistant for GTPS Cloud developers.
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.13 or newer (the scraper uses the built-in `node:sqlite`)
 - npm 10 or newer
 
 ## Installation
@@ -53,6 +52,48 @@ npm run start      # serve the production build
 The documentation pages are static **layout samples** and are labelled as such
 in the UI.
 
+## Documentation scraper (Step 2)
+
+Source: <https://dash.gtps.cloud/docs> (same origin only, never outside `/docs`).
+
+```bash
+npm install
+npx playwright install chromium   # only needed for client-rendered pages
+npm run scrape                     # CLI crawl, prints real counts
+npm run scrape -- --retry          # retry only failed pages
+npm run scrape -- --render=static  # plain HTTP only (never starts a browser)
+npm test                           # unit tests
+```
+
+Or use **Documentation → Start Scraping / Cancel / Retry failed / View logs** in
+the app. Data is stored in `data/gtps-assistant.db` (override with
+`GTPS_DB_PATH`). Tables: `documents`, `categories`, `document_sections`,
+`code_examples`, `api_entries`, `document_links`, `crawl_urls`,
+`scraping_logs`, `sync_metadata`.
+
+How it behaves:
+
+- Reads `robots.txt` first. If it cannot be read, nothing is crawled. Disallowed
+  URLs are recorded as `blocked`, never requested. `Crawl-delay` is honoured.
+- One request per second by default, timeouts, and retries (network, timeout,
+  429, 5xx only). No authentication or access restrictions are bypassed.
+- Fetches over plain HTTP and uses Playwright only if a page looks
+  client-rendered (`auto`). Cheerio parses the HTML.
+- Every failure (network, timeout, HTTP error, empty or invalid content,
+  browser error, redirect out of `/docs`) is stored with its reason and shown in
+  the UI. Nothing is silently skipped.
+- Duplicate URLs are normalized (hash, trailing slash, tracking params) and
+  crawled once. Different URLs with identical content are marked `duplicate`.
+
+Known limitations:
+
+- The extractor relies on semantic tags (headings, `p`, `li`, `table`, `pre`).
+  API descriptions and return types are inferred from text near each code
+  block, so they can be `null` if the live markup differs from what was
+  inspected. Run `npm run scrape` and review the results before relying on them.
+- The built-in documentation viewer shows cleaned text; code examples are
+  stored in the database but not yet rendered in the viewer.
+
 ## Project structure
 
 ```
@@ -64,7 +105,8 @@ src/
   features/       Feature modules: dashboard, chat, docs, workspace, settings
   hooks/          Reusable React hooks
   lib/            Constants, navigation helpers, markdown parser, utilities
-  services/       Browser storage service
+  server/         Scraper (crawler, robots, extractor) and SQLite layer (server only)
+  services/       Browser storage and scraper API client
   store/          Zustand stores (ui, chat, workspace)
   types/          Shared TypeScript types
 ```
@@ -80,6 +122,6 @@ src/
 
 ## Roadmap
 
-1. **Step 1 (this step):** project foundation and UI.
-2. Later steps: documentation ingestion, AI provider integration, Lua
-   generation.
+1. **Step 1:** project foundation and UI.
+2. **Step 2:** documentation scraper and local SQLite storage.
+3. Later steps: AI provider integration, Lua generation.

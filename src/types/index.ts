@@ -39,6 +39,8 @@ export interface DocPage {
   title: string;
   summary: string;
   body: string;
+  /** Original URL. Present only for scraped pages; absent for layout samples. */
+  sourceUrl?: string;
 }
 
 export interface LuaFile {

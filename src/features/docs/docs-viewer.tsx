@@ -23,9 +23,23 @@ export function DocsViewer({ page }: DocsViewerProps) {
 
   return (
     <article className="mx-auto w-full max-w-3xl px-5 py-8 sm:px-8">
-      <Badge variant="muted" className="mb-4">
-        Layout sample, not real documentation
-      </Badge>
+      {page.sourceUrl ? (
+        <p className="mb-4 break-all text-xs text-muted-foreground">
+          Source:{" "}
+          <a
+            href={page.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {page.sourceUrl}
+          </a>
+        </p>
+      ) : (
+        <Badge variant="muted" className="mb-4">
+          Layout sample, not real documentation. Run the scraper to load GTPS Cloud docs.
+        </Badge>
+      )}
       <MarkdownRenderer source={page.body} />
     </article>
   );
