@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Light theme (optional) */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 10%;
+    --primary: 160 84% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 15%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 42%;
+    --accent: 240 5% 94%;
+    --accent-foreground: 240 6% 12%;
+    --border: 240 6% 90%;
+    --input: 240 6% 88%;
+    --ring: 160 84% 30%;
+    --sidebar: 240 5% 97%;
+    --sidebar-foreground: 240 6% 20%;
+    --sidebar-border: 240 6% 90%;
+    --radius: 0.625rem;
+  }
+
+  /* Dark theme (default) */
+  .dark {
+    --background: 240 6% 7%;
+    --foreground: 240 5% 92%;
+    --card: 240 6% 9%;
+    --card-foreground: 240 5% 92%;
+    --popover: 240 6% 9%;
+    --popover-foreground: 240 5% 92%;
+    --primary: 160 70% 45%;
+    --primary-foreground: 240 6% 7%;
+    --secondary: 240 4% 14%;
+    --secondary-foreground: 240 5% 92%;
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 4% 60%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 240 5% 94%;
+    --border: 240 4% 17%;
+    --input: 240 4% 20%;
+    --ring: 160 70% 45%;
+    --sidebar: 240 6% 9%;
+    --sidebar-foreground: 240 5% 85%;
+    --sidebar-border: 240 4% 15%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  html:not(.dark) {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
