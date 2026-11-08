@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DocsSidebar } from "@/features/docs/docs-sidebar";
 import { DocsViewer } from "@/features/docs/docs-viewer";
-import { ScraperPanel } from "@/features/docs/scraper-panel";
+import { SyncPanel } from "@/features/docs/sync-panel";
 import {
   PLACEHOLDER_DOC_CATEGORIES,
   PLACEHOLDER_DOC_PAGES,
 } from "@/lib/constants";
-import { scraperClient } from "@/services/scraper-client";
+import { syncClient } from "@/services/sync-client";
 import type { DocCategory, DocPage } from "@/types";
 import type { ScrapedDocumentSummary } from "@/types/scraper";
 
@@ -45,7 +45,7 @@ export function DocsView() {
 
   const loadDocuments = useCallback(async () => {
     try {
-      setScraped(await scraperClient.getDocuments());
+      setScraped(await syncClient.getDocuments());
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not load documents.");
@@ -54,9 +54,6 @@ export function DocsView() {
 
   useEffect(() => {
     void loadDocuments();
-    // Refresh periodically so pages appear while a crawl is running.
-    const timer = window.setInterval(() => void loadDocuments(), 5000);
-    return () => window.clearInterval(timer);
   }, [loadDocuments]);
 
   const { allPages, categories } = useMemo(() => {
@@ -87,7 +84,7 @@ export function DocsView() {
 
   return (
     <div className="flex h-full flex-col">
-      <ScraperPanel onDataChanged={() => void loadDocuments()} />
+      <SyncPanel onDocumentsChanged={loadDocuments} />
       {loadError && (
         <p role="alert" className="border-b border-border px-4 py-2 text-sm text-red-500">
           {loadError}

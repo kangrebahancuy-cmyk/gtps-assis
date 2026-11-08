@@ -7,6 +7,7 @@ import {
   withRetries,
   type FetchedPage,
   type PageFetcher,
+  type RequestValidators,
 } from "@/server/scraper/fetcher";
 import { looksClientRendered } from "@/server/scraper/extractor";
 
@@ -20,18 +21,22 @@ export class HybridFetcher implements PageFetcher {
 
   constructor(private readonly config: ScraperConfig) {}
 
-  async fetchPage(url: string, signal?: AbortSignal): Promise<FetchedPage> {
+  async fetchPage(
+    url: string,
+    signal?: AbortSignal,
+    validators: RequestValidators | null = null,
+  ): Promise<FetchedPage> {
     const { renderMode } = this.config;
 
     if (renderMode === "browser") return this.render(url, signal);
 
-    const page = await withRetries(() => fetchStatic(url, this.config, signal), {
+    const page = await withRetries(() => fetchStatic(url, this.config, signal, fetch, validators), {
       maxRetries: this.config.maxRetries,
       backoffMs: this.config.retryBackoffMs,
       signal,
     });
 
-    if (renderMode === "auto" && looksClientRendered(page.html)) {
+    if (renderMode === "auto" && !page.notModified && looksClientRendered(page.html)) {
       return this.render(url, signal);
     }
     return page;

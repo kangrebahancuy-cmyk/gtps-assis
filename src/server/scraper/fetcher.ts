@@ -29,17 +29,33 @@ export class FetchError extends Error {
   }
 }
 
+/** Cache validators sent back to the server so it can answer 304 Not Modified. */
+export interface RequestValidators {
+  etag: string | null;
+  lastModified: string | null;
+}
+
 export interface FetchedPage {
   /** Final URL after redirects. */
   finalUrl: string;
+  /** Empty when notModified is true. */
   html: string;
   httpStatus: number;
   rendered: "static" | "browser";
+  /** Validators the server returned, saved for the next incremental sync. */
+  etag?: string | null;
+  lastModified?: string | null;
+  /** The server answered 304: the stored copy is still current. */
+  notModified?: boolean;
 }
 
 /** A page source. Tests substitute their own implementation. */
 export interface PageFetcher {
-  fetchPage(url: string, signal?: AbortSignal): Promise<FetchedPage>;
+  fetchPage(
+    url: string,
+    signal?: AbortSignal,
+    validators?: RequestValidators | null,
+  ): Promise<FetchedPage>;
   close(): Promise<void>;
 }
 
@@ -50,17 +66,22 @@ export async function fetchStatic(
   config: Pick<ScraperConfig, "userAgent" | "timeoutMs">,
   signal?: AbortSignal,
   fetchFn: FetchFn = fetch,
+  validators: RequestValidators | null = null,
 ): Promise<FetchedPage> {
   const timeout = AbortSignal.timeout(config.timeoutMs);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
+  const headers: Record<string, string> = {
+    "user-agent": config.userAgent,
+    accept: "text/html,application/xhtml+xml",
+  };
+  if (validators?.etag) headers["if-none-match"] = validators.etag;
+  if (validators?.lastModified) headers["if-modified-since"] = validators.lastModified;
+
   let response: Response;
   try {
     response = await fetchFn(url, {
-      headers: {
-        "user-agent": config.userAgent,
-        accept: "text/html,application/xhtml+xml",
-      },
+      headers,
       redirect: "follow",
       signal: combined,
     });
@@ -74,6 +95,17 @@ export async function fetchStatic(
     throw new FetchError("network", `Network error: ${detail}`);
   }
 
+  if (response.status === 304 && (validators?.etag || validators?.lastModified)) {
+    return {
+      finalUrl: response.url || url,
+      html: "",
+      httpStatus: 304,
+      rendered: "static",
+      etag: validators.etag,
+      lastModified: validators.lastModified,
+      notModified: true,
+    };
+  }
   if (!response.ok) {
     throw new FetchError("http", `HTTP ${response.status} ${response.statusText}`.trim(), response.status);
   }
@@ -88,7 +120,14 @@ export async function fetchStatic(
   } catch {
     throw new FetchError("network", "Connection dropped while reading the response body");
   }
-  return { finalUrl: response.url || url, html, httpStatus: response.status, rendered: "static" };
+  return {
+    finalUrl: response.url || url,
+    html,
+    httpStatus: response.status,
+    rendered: "static",
+    etag: response.headers.get("etag"),
+    lastModified: response.headers.get("last-modified"),
+  };
 }
 
 /** Retries retryable failures with linear backoff. Never retries a cancel. */

@@ -1,5 +1,21 @@
 /** SQLite schema. Applied idempotently on every database open. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/**
+ * crawl_urls is defined separately because the v1 -> v2 migration has to
+ * rebuild it (SQLite cannot alter a CHECK constraint in place).
+ */
+export const CRAWL_URLS_SQL = `
+CREATE TABLE crawl_urls (
+  url            TEXT PRIMARY KEY,
+  status         TEXT NOT NULL CHECK (status IN ('pending','scraped','failed','duplicate','blocked','deleted')),
+  http_status    INTEGER,
+  error          TEXT,
+  attempts       INTEGER NOT NULL DEFAULT 0,
+  discovered_via TEXT,
+  discovered_at  TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);`;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS categories (
@@ -21,10 +37,14 @@ CREATE TABLE IF NOT EXISTS documents (
   content_hash     TEXT NOT NULL,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
-  last_scraped_at  TEXT NOT NULL
+  last_scraped_at  TEXT NOT NULL,
+  etag             TEXT,
+  last_modified    TEXT,
+  deleted_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash);
 CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category_id);
+CREATE INDEX IF NOT EXISTS idx_documents_deleted ON documents(deleted_at);
 
 CREATE TABLE IF NOT EXISTS document_sections (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,16 +85,7 @@ CREATE TABLE IF NOT EXISTS document_links (
 );
 
 -- One row per URL the crawler has ever discovered, with its latest outcome.
-CREATE TABLE IF NOT EXISTS crawl_urls (
-  url            TEXT PRIMARY KEY,
-  status         TEXT NOT NULL CHECK (status IN ('pending','scraped','failed','duplicate','blocked')),
-  http_status    INTEGER,
-  error          TEXT,
-  attempts       INTEGER NOT NULL DEFAULT 0,
-  discovered_via TEXT,
-  discovered_at  TEXT NOT NULL,
-  updated_at     TEXT NOT NULL
-);
+${CRAWL_URLS_SQL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")}
 CREATE INDEX IF NOT EXISTS idx_crawl_status ON crawl_urls(status);
 
 CREATE TABLE IF NOT EXISTS scraping_logs (
@@ -92,4 +103,23 @@ CREATE TABLE IF NOT EXISTS sync_metadata (
   value       TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
+
+-- One row per synchronization run (manual or scheduled).
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id           TEXT PRIMARY KEY,
+  mode         TEXT NOT NULL,
+  trigger      TEXT NOT NULL CHECK (trigger IN ('manual','scheduled')),
+  status       TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  finished_at  TEXT,
+  added        INTEGER NOT NULL DEFAULT 0,
+  updated      INTEGER NOT NULL DEFAULT 0,
+  unchanged    INTEGER NOT NULL DEFAULT 0,
+  failed       INTEGER NOT NULL DEFAULT 0,
+  deleted      INTEGER NOT NULL DEFAULT 0,
+  duplicates   INTEGER NOT NULL DEFAULT 0,
+  blocked      INTEGER NOT NULL DEFAULT 0,
+  error        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
 `;

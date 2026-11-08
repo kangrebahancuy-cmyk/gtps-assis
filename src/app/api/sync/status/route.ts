@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-
-import { getStatus } from "@/server/scraper/job-manager";
+import { getFullStatus } from "@/server/sync/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.json(getStatus());
+  return NextResponse.json(getFullStatus());
 }

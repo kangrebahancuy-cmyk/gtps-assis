@@ -28,7 +28,7 @@ describe("crawler: discovery", () => {
     });
     const summary = await crawler(fetcher, repo).run("full");
     assert.deepEqual(fetcher.requested, [u("/docs"), u("/docs/a"), u("/docs/b"), u("/docs/c")]);
-    assert.equal(summary.scraped, 4);
+    assert.equal(summary.counts.added, 4);
     assert.equal(repo.getStats().discovered, 4);
     assert.equal(repo.listDocuments().length, 4);
   });
@@ -53,7 +53,7 @@ describe("crawler: content problems", () => {
       [u("/docs/copy")]: { html: body({ title: "Same", text: "exactly the same text" }) },
     });
     const summary = await crawler(fetcher, repo).run("full");
-    assert.equal(summary.duplicates, 1);
+    assert.equal(summary.counts.duplicates, 1);
     assert.equal(repo.listDocuments().length, 1);
     assert.equal(repo.getStats().duplicates, 1);
   });
@@ -64,7 +64,7 @@ describe("crawler: content problems", () => {
       [u("/docs/empty")]: { html: body({ title: "Empty", text: "" }) },
     });
     const summary = await crawler(fetcher, repo).run("full");
-    assert.equal(summary.failed, 1);
+    assert.equal(summary.counts.failed, 1);
     assert.match(repo.listFailed()[0]?.error ?? "", /Empty or invalid content/);
   });
   it("records invalid content (extractor throws) as failed", async () => {
@@ -74,8 +74,8 @@ describe("crawler: content problems", () => {
       [u("/docs/bad")]: { html: "{not json" },
     });
     const summary = await crawler(fetcher, repo).run("full");
-    assert.equal(summary.failed, 1);
-    assert.equal(summary.scraped, 1);
+    assert.equal(summary.counts.failed, 1);
+    assert.equal(summary.counts.added, 1);
   });
   it("rejects redirects that leave the documentation area", async () => {
     const { repo } = freshRepo();
@@ -83,7 +83,7 @@ describe("crawler: content problems", () => {
       [u("/docs")]: { redirectTo: "https://evil.test/login", html: body({ title: "x", text: "should not be saved" }) },
     });
     const summary = await crawler(fetcher, repo).run("full");
-    assert.equal(summary.failed, 1);
+    assert.equal(summary.counts.failed, 1);
     assert.equal(repo.listDocuments().length, 0);
   });
 });
@@ -101,8 +101,8 @@ describe("crawler: failure handling and retry", () => {
     const { repo } = freshRepo();
     const fetcher = new FakeFetcher(routes(false));
     const summary = await crawler(fetcher, repo).run("full");
-    assert.equal(summary.scraped, 1);
-    assert.equal(summary.failed, 4); // a (500), b (timeout), c (network), gone (404)
+    assert.equal(summary.counts.added, 1);
+    assert.equal(summary.counts.failed, 4); // a (500), b (timeout), c (network), gone (404)
     const failed = repo.listFailed();
     assert.equal(failed.find((f) => f.url === u("/docs/a"))?.httpStatus, 500);
     assert.match(failed.find((f) => f.url === u("/docs/b"))?.error ?? "", /Timed out/);
@@ -116,7 +116,7 @@ describe("crawler: failure handling and retry", () => {
     const summary = await crawler(second, repo).run("retry");
     assert.ok(!second.requested.includes(u("/docs")), "scraped page must not be re-requested");
     assert.equal(second.requested.length, 4);
-    assert.equal(summary.scraped, 1);
+    assert.equal(summary.counts.added, 1);
     assert.equal(repo.getStats().failed, 3);
   });
 });
@@ -131,7 +131,7 @@ describe("crawler: robots.txt and cancellation", () => {
     });
     const summary = await crawler(fetcher, repo, "User-agent: *\nDisallow: /docs/private\n").run("full");
     assert.ok(!fetcher.requested.includes(u("/docs/private")));
-    assert.equal(summary.blocked, 1);
+    assert.equal(summary.counts.blocked, 1);
     assert.equal(repo.getStats().blocked, 1);
   });
   it("refuses to crawl when robots.txt cannot be read", async () => {

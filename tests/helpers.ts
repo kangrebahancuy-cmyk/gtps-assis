@@ -2,7 +2,12 @@ import { openDatabase } from "@/server/db/database";
 import { Repository } from "@/server/db/repository";
 import { createConfig, type ScraperConfig } from "@/server/scraper/config";
 import type { ExtractedPage } from "@/server/scraper/extractor";
-import { FetchError, type FetchedPage, type PageFetcher } from "@/server/scraper/fetcher";
+import {
+  FetchError,
+  type FetchedPage,
+  type PageFetcher,
+  type RequestValidators,
+} from "@/server/scraper/fetcher";
 import { sha256 } from "@/server/scraper/hash";
 import { resolveDocLink } from "@/server/scraper/url";
 
@@ -58,25 +63,53 @@ export function fakeExtract(
   };
 }
 
-type Route = { html: string } | { error: FetchError } | { redirectTo: string; html: string };
+export type Route =
+  | { html: string; etag?: string }
+  | { error: FetchError }
+  | { redirectTo: string; html: string };
 
-/** In-memory site. Unknown URLs behave like HTTP 404. Records every request. */
+/**
+ * In-memory site. Unknown URLs behave like HTTP 404. Tests may mutate `routes`
+ * between runs to simulate edits, deletions and outages. Honours ETag
+ * validators like a real server (answers 304 when they match).
+ */
 export class FakeFetcher implements PageFetcher {
   readonly requested: string[] = [];
-  constructor(private readonly routes: Record<string, Route>, private readonly onFetch?: (url: string) => void) {}
+  /** Validators sent with each request, in order (null = unconditional). */
+  readonly sentValidators: Array<{ url: string; validators: RequestValidators | null }> = [];
 
-  async fetchPage(url: string): Promise<FetchedPage> {
+  constructor(
+    public routes: Record<string, Route>,
+    private readonly onFetch?: (url: string) => void,
+  ) {}
+
+  async fetchPage(
+    url: string,
+    _signal?: AbortSignal,
+    validators: RequestValidators | null = null,
+  ): Promise<FetchedPage> {
     this.requested.push(url);
+    this.sentValidators.push({ url, validators });
     this.onFetch?.(url);
     const route = this.routes[url];
     if (!route) throw new FetchError("http", "HTTP 404 Not Found", 404);
     if ("error" in route) throw route.error;
+    if ("etag" in route && route.etag && validators?.etag === route.etag) {
+      return { finalUrl: url, html: "", httpStatus: 304, rendered: "static", etag: route.etag, notModified: true };
+    }
     return {
       finalUrl: "redirectTo" in route ? route.redirectTo : url,
       html: route.html,
       httpStatus: 200,
       rendered: "static",
+      etag: "etag" in route ? route.etag ?? null : null,
     };
   }
+
   async close(): Promise<void> {}
+
+  reset(): void {
+    this.requested.length = 0;
+    this.sentValidators.length = 0;
+  }
 }

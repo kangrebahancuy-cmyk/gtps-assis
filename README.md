@@ -2,7 +2,7 @@
 
 An AI-powered development assistant for GTPS Cloud developers.
 
-> **Status: Step 2 (documentation scraper) added on top of the Step 1 UI.**
+> **Status: Step 3 (documentation synchronization engine) added on top of Steps 1 and 2.**
 > There is **no AI provider and no Lua generator yet**. Controls that depend
 > on them are disabled and labelled as unavailable.
 
@@ -59,7 +59,9 @@ Source: <https://dash.gtps.cloud/docs> (same origin only, never outside `/docs`)
 ```bash
 npm install
 npx playwright install chromium   # only needed for client-rendered pages
-npm run scrape                     # CLI crawl, prints real counts
+npm run scrape                     # CLI sync (auto: full first, then incremental)
+npm run scrape -- --full           # re-fetch everything
+npm run scrape -- --incremental    # only reprocess what changed
 npm run scrape -- --retry          # retry only failed pages
 npm run scrape -- --render=static  # plain HTTP only (never starts a browser)
 npm test                           # unit tests
@@ -94,6 +96,60 @@ Known limitations:
 - The built-in documentation viewer shows cleaned text; code examples are
   stored in the database but not yet rendered in the viewer.
 
+## Documentation synchronization (Step 3)
+
+Everything is on **Documentation** page (top panel) and also available through
+`npm run scrape` and `/api/sync/*`.
+
+| Action | What it does |
+| --- | --- |
+| Sync now | Full sync the first time, incremental afterwards |
+| Incremental | Re-checks known pages with `If-None-Match` / `If-Modified-Since`; a `304` page is not re-parsed. Pages without validators are re-fetched but only rewritten when their content hash changed |
+| Full sync | Re-fetches every known page (including ones marked deleted) |
+| Retry failed | Re-checks only the URLs whose last attempt failed |
+| Pause / Resume / Cancel | Take effect between pages. A cancelled run keeps everything it already saved |
+
+**Change detection** uses the URL, the content hash, `ETag` / `Last-Modified`
+when the server sends them, and the time of the last check:
+
+- *New*: a URL seen for the first time (start page is always fetched in full
+  because its navigation reveals new pages).
+- *Updated*: same URL, different content hash. A page that comes back after
+  being marked deleted is restored and counted as updated.
+- *Unchanged*: `304`, or same hash. Nothing is rewritten.
+- *Deleted*: only when the source answers **404 or 410** for a page that was
+  indexed. The text is **kept** and flagged (soft delete), so nothing is lost.
+- *Failed*: network errors, timeouts, 429, 5xx, empty or invalid content. These
+  are treated as temporary: the indexed copy is never removed because of them.
+  If `robots.txt` cannot be read the whole run fails and the index is untouched.
+
+A run is "successful" (it moves *Last successful synchronization*) only when it
+finished, was not cancelled, and had no failures. Every run is stored in
+`sync_runs`; the activity log can be filtered per run. Runs left open by a
+stopped backend are marked `interrupted` on the next start.
+
+### Automatic sync and the scheduler
+
+Automatic sync runs in a **backend scheduler** that starts with the Next.js
+server (`src/instrumentation.ts`), not in the browser. Closing or reloading the
+tab does not stop it.
+
+**It only runs while the local backend process is running.** If you stop
+`npm run dev` / `npm start`, nothing is synchronized. The dashboard shows a
+heartbeat-based status ("Running in the local backend" / "Not running" /
+"Backend unreachable"), and if a run came due while the backend was down, it
+starts when the backend is started again and a notice says so. Missed runs are
+not replayed more than once. For unattended use, keep the production server
+(`npm run build && npm start`) running, for example under a process manager.
+
+Settings (stored in SQLite): on/off, interval (5 minutes to 7 days), pause
+schedule. Automatic sync is **off by default**.
+
+Limits worth knowing: only one run at a time; a manual run postpones the next
+scheduled one; pages rendered with Playwright do not store validators, so they
+are always re-rendered in incremental mode; whether a `304` is possible depends
+on whether the site sends `ETag` / `Last-Modified` (otherwise hashing is used).
+
 ## Project structure
 
 ```
@@ -105,7 +161,7 @@ src/
   features/       Feature modules: dashboard, chat, docs, workspace, settings
   hooks/          Reusable React hooks
   lib/            Constants, navigation helpers, markdown parser, utilities
-  server/         Scraper (crawler, robots, extractor) and SQLite layer (server only)
+  server/         Scraper, sync service + scheduler, SQLite layer (server only)
   services/       Browser storage and scraper API client
   store/          Zustand stores (ui, chat, workspace)
   types/          Shared TypeScript types
@@ -124,4 +180,5 @@ src/
 
 1. **Step 1:** project foundation and UI.
 2. **Step 2:** documentation scraper and local SQLite storage.
-3. Later steps: AI provider integration, Lua generation.
+3. **Step 3:** synchronization engine (incremental sync, scheduler).
+4. Later steps: AI provider integration, Lua generation.
