@@ -28,21 +28,6 @@ export interface NavItem {
 
 export type NavIconName = "book" | "code" | "cpu" | "settings";
 
-export interface DocCategory {
-  id: string;
-  label: string;
-}
-
-export interface DocPage {
-  id: string;
-  categoryId: string;
-  title: string;
-  summary: string;
-  body: string;
-  /** Original URL. Present only for scraped pages; absent for layout samples. */
-  sourceUrl?: string;
-}
-
 export interface LuaFile {
   id: string;
   name: string;
@@ -64,8 +49,24 @@ export interface SettingsSection {
   description: string;
 }
 
+export interface MarkdownListItem {
+  text: string;
+  /** Nested list under this item, if any. */
+  children: { ordered: boolean; items: MarkdownListItem[] } | null;
+}
+
+export type TableAlign = "left" | "center" | "right" | null;
+
 export type MarkdownBlock =
   | { type: "paragraph"; text: string }
-  | { type: "heading"; level: 1 | 2 | 3; text: string }
-  | { type: "list"; ordered: boolean; items: string[] }
-  | { type: "code"; language: string; code: string };
+  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; id: string }
+  | { type: "list"; ordered: boolean; items: MarkdownListItem[] }
+  | { type: "code"; language: string; code: string }
+  | { type: "table"; header: string[]; align: TableAlign[]; rows: string[][] };
+
+export type InlineNode =
+  | { type: "text"; text: string }
+  | { type: "code"; text: string }
+  | { type: "strong"; children: InlineNode[] }
+  | { type: "em"; children: InlineNode[] }
+  | { type: "link"; href: string; children: InlineNode[] };

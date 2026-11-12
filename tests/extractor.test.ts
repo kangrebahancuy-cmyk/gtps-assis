@@ -9,8 +9,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { extractFromDom } from "@/server/scraper/extract-dom";
 import { extractPage, looksClientRendered } from "@/server/scraper/extractor";
 import { testConfig } from "./helpers";
+import { parseHtml, serializeHtml } from "./mini-html";
 
 const cfg = testConfig({ startUrl: "https://dash.gtps.cloud/docs" });
 const URL_ = "https://dash.gtps.cloud/docs/player";
@@ -54,8 +56,8 @@ describe("extractPage", () => {
     assert.equal(page.contentHash, extractPage(PAGE, URL_, cfg).contentHash);
     assert.match(page.contentHash, /^[0-9a-f]{64}$/);
   });
-  it("extracts paragraphs and strips scripts/nav from cleaned content", () => {
-    assert.match(page.cleanedContent, /Methods for player objects\./);
+  it("extracts Markdown and strips scripts/nav from cleaned content", () => {
+    assert.match(page.cleanedContent, /Methods for \*\*player\*\* objects\./);
     assert.doesNotMatch(page.cleanedContent, /Overview/);
   });
   it("extracts Lua code examples, tagged or detected", () => {
@@ -83,6 +85,19 @@ describe("extractPage", () => {
   });
   it("lists body links with their text", () => {
     assert.deepEqual(page.links, [{ text: "World reference", url: "https://dash.gtps.cloud/docs/world" }]);
+  });
+});
+
+describe("Cheerio vs the test-only parser", () => {
+  // tests/extract-dom.test.ts runs the same extraction on the mini parser. If the two parsers
+  // disagree on a fixture, the mini parser is not a faithful stand-in and those tests prove less.
+  it("produce identical extraction results for the shared fixture", () => {
+    const viaCheerio = extractPage(PAGE, URL_, cfg);
+    const viaMini = extractFromDom(parseHtml(PAGE), URL_, cfg, serializeHtml);
+    const { rawContent: a, ...restA } = viaCheerio;
+    const { rawContent: b, ...restB } = viaMini;
+    assert.deepEqual(restA, restB);
+    assert.ok(a.startsWith("<main>") && b.startsWith("<main>"));
   });
 });
 

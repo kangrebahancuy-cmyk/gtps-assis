@@ -1,6 +1,4 @@
 import type {
-  DocCategory,
-  DocPage,
   NavItem,
   SettingsSection,
 } from "@/types";
@@ -66,61 +64,6 @@ export const EXAMPLE_PROMPTS: readonly string[] = [
   "Debug my Lua script.",
 ];
 
-/**
- * Placeholder categories and pages. They are static layout samples only;
- * the real documentation content arrives in a later step.
- */
-export const PLACEHOLDER_DOC_CATEGORIES: readonly DocCategory[] = [
-  { id: "getting-started", label: "Getting Started" },
-  { id: "api", label: "API Reference" },
-  { id: "lua", label: "Lua Scripting" },
-];
-
-export const PLACEHOLDER_DOC_PAGES: readonly DocPage[] = [
-  {
-    id: "overview",
-    categoryId: "getting-started",
-    title: "Overview",
-    summary: "Layout sample for a documentation page.",
-    body: [
-      "# Overview",
-      "This is a **layout placeholder**. Real GTPS Cloud documentation is not loaded yet.",
-      "## Code block sample",
-      "```lua",
-      "-- Sample only: not real GTPS Cloud API code",
-      'print("hello from the docs viewer")',
-      "```",
-    ].join("\n"),
-  },
-  {
-    id: "api-placeholder",
-    categoryId: "api",
-    title: "API Reference (sample)",
-    summary: "Layout sample for an API reference page.",
-    body: [
-      "# API Reference",
-      "Entries will appear here once documentation is available.",
-      "- Category navigation",
-      "- Search",
-      "- Code block display",
-    ].join("\n"),
-  },
-  {
-    id: "lua-placeholder",
-    categoryId: "lua",
-    title: "Lua Scripting (sample)",
-    summary: "Layout sample for a scripting guide page.",
-    body: [
-      "# Lua Scripting",
-      "Guides will appear here once documentation is available.",
-      "```lua",
-      "-- Sample only",
-      "local greeting = 'placeholder'",
-      "print(greeting)",
-      "```",
-    ].join("\n"),
-  },
-];
 
 export const PLACEHOLDER_PROVIDERS: readonly string[] = [
   "No provider connected",

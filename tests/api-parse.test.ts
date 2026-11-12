@@ -56,4 +56,9 @@ describe("readEntryDetails", () => {
     assert.deepEqual(readEntryDetails([], "x()"), { description: null, returns: null });
     assert.deepEqual(readEntryDetails(["Parameters"], "x()"), { description: null, returns: null });
   });
+  it("treats a sentence that starts with 'Returns' as a description, not a return type", () => {
+    const lines = ["Returns the name for this avatar.", "Returns string"];
+    assert.deepEqual(readEntryDetails(lines, "x()"), { description: "Returns the name for this avatar.", returns: "string" });
+    assert.equal(readEntryDetails(["Returns: a table of players"], "x()").returns, "a table of players");
+  });
 });

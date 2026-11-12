@@ -45,12 +45,12 @@ npm run start      # serve the production build
 | Shell | Collapsible sidebar, mobile drawer, active indicator, dark/light theme | - |
 | Chats | New chat, local history list, search by title, delete | Sending messages (no provider) |
 | Composer | Typing, example prompts fill the draft | Send button is disabled |
-| Documentation | Search, category filter, viewer with code blocks (sample pages) | Real GTPS Cloud documentation |
+| Documentation | Explorer over the indexed GTPS Cloud docs: hierarchy, FTS5 search, Markdown viewer, status | Content appears only after a sync has been run |
 | Lua Workspace | Monaco editor, file tabs, live preview, local persistence | Download, Lua generation |
 | Settings | Theme switch, local data size and clearing | Providers, models, sync, chat preferences |
 
-The documentation pages are static **layout samples** and are labelled as such
-in the UI.
+The documentation explorer shows nothing until a synchronization has been run:
+there are no sample pages any more.
 
 ## Documentation scraper (Step 2)
 
@@ -150,6 +150,52 @@ scheduled one; pages rendered with Playwright do not store validators, so they
 are always re-rendered in incremental mode; whether a `304` is possible depends
 on whether the site sends `ETag` / `Last-Modified` (otherwise hashing is used).
 
+## Documentation explorer (Step 4)
+
+The **Documentation** page reads only the SQLite database filled by the sync
+engine; no page, category or API name is hardcoded.
+
+- **Navigation.** *Pages* shows the indexed hierarchy: categories and
+  subcategories read from the site's sidebar groups, then pages. Pages the
+  extractor found no sidebar group for are arranged by URL path instead (such
+  nodes are marked `url-path` in the API). *API* lists every function, method,
+  callback and event grouped by owner; *Lua examples* lists every Lua code block
+  with its page. Kinds are derived from the signature (`...Callback` = callback,
+  `on...` globals = event, `Name:member` = method), not read from the site.
+- **Search (SQLite FTS5).** Scopes: everything, title, keyword (page text), API
+  name, function (functions and methods only) and inside code examples. Page
+  text uses a stemmed index (`teleporting` finds `Teleport`, last word matches as
+  a prefix). API names and code use a trigram index, so `chat` finds
+  `onPlayerChatCallback`; terms shorter than 3 characters fall back to `LIKE`.
+  Results show title, highlighted matching text, category and original URL.
+- **Viewer.** Pages are stored as Markdown (headings, lists, GFM tables, fenced
+  code with language) and rendered by a dependency-free parser as React
+  elements, never raw HTML; links are limited to http(s). Lua blocks are
+  syntax-highlighted and have a copy button. Each page shows its original URL,
+  the date it was last synchronized and when its content last changed. Links to
+  other indexed pages open inside the explorer.
+- **Status bar.** Indexed documents, API entries, Lua examples, last successful
+  sync, failed pages (with the error) and live sync state, all read from the
+  database / sync engine. A warning appears if the search index is out of step.
+
+HTTP API (all read-only): `GET /api/docs/tree`, `/document?id=|url=`,
+`/search?q=&scope=&limit=`, `/api?kind=`, `/examples?language=`, `/status`.
+
+Upgrading: opening an existing database migrates it in place (schema v3) and
+builds the search index once. Pages stored by Step 2/3 contain plain text; they
+are converted to Markdown the next time they change on the site, or run a
+**Full sync** to refresh everything at once (changed hashes show up as
+"updated" once).
+
+AI integration is not part of this step.
+
+### Tests
+
+```bash
+npm test        # server tests (node:test): extraction, FTS, explorer, sync, end-to-end over local HTTP
+npm run test:ui # server-side render tests for the explorer components (tests/ui)
+```
+
 ## Project structure
 
 ```
@@ -161,7 +207,7 @@ src/
   features/       Feature modules: dashboard, chat, docs, workspace, settings
   hooks/          Reusable React hooks
   lib/            Constants, navigation helpers, markdown parser, utilities
-  server/         Scraper, sync service + scheduler, SQLite layer (server only)
+  server/         Scraper, sync service + scheduler, SQLite layer, docs explorer service (server only)
   services/       Browser storage and scraper API client
   store/          Zustand stores (ui, chat, workspace)
   types/          Shared TypeScript types
@@ -181,4 +227,5 @@ src/
 1. **Step 1:** project foundation and UI.
 2. **Step 2:** documentation scraper and local SQLite storage.
 3. **Step 3:** synchronization engine (incremental sync, scheduler).
-4. Later steps: AI provider integration, Lua generation.
+4. **Step 4:** documentation explorer (hierarchy, FTS5 search, viewer, status).
+5. Later steps: AI provider integration, Lua generation.

@@ -1,5 +1,5 @@
 /** SQLite schema. Applied idempotently on every database open. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * crawl_urls is defined separately because the v1 -> v2 migration has to
@@ -73,9 +73,11 @@ CREATE TABLE IF NOT EXISTS api_entries (
   signature    TEXT NOT NULL,
   params_json  TEXT NOT NULL,
   description  TEXT,
-  returns      TEXT
+  returns      TEXT,
+  kind         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_api_document ON api_entries(document_id);
+CREATE INDEX IF NOT EXISTS idx_api_kind ON api_entries(kind);
 
 CREATE TABLE IF NOT EXISTS document_links (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,4 +124,15 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   error        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
+
+-- Full-text search (FTS5). rowid = id of the source row. See search-index.ts.
+CREATE VIRTUAL TABLE IF NOT EXISTS search_documents USING fts5(
+  title, category, content, tokenize = 'porter unicode61'
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS search_api USING fts5(
+  name, signature, description, tokenize = 'trigram'
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS search_code USING fts5(
+  code, context, tokenize = 'trigram'
+);
 `;

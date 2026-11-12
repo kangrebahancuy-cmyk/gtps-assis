@@ -1,4 +1,4 @@
-import type { ScrapedDocumentSummary, ScraperLogEntry } from "@/types/scraper";
+import type { ScraperLogEntry } from "@/types/scraper";
 import type {
   SyncRequestMode,
   SyncRunRecord,
@@ -15,7 +15,7 @@ export class BackendUnreachableError extends Error {
 
 export class SyncApiError extends Error {}
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, { cache: "no-store", ...init });
@@ -59,6 +59,4 @@ export const syncClient = {
       )
     ).logs,
   getRuns: async () => (await request<{ runs: SyncRunRecord[] }>("/api/sync/runs")).runs,
-  getDocuments: async () =>
-    (await request<{ documents: ScrapedDocumentSummary[] }>("/api/docs")).documents,
 };

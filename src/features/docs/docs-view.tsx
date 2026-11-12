@@ -2,89 +2,130 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DocsSidebar } from "@/features/docs/docs-sidebar";
+import { ApiList } from "@/features/docs/api-list";
+import { DocTree } from "@/features/docs/doc-tree";
+import { DocsSidebar, type SidebarTab } from "@/features/docs/docs-sidebar";
+import { DocsStatusBar } from "@/features/docs/docs-status-bar";
 import { DocsViewer } from "@/features/docs/docs-viewer";
+import { ExamplesList } from "@/features/docs/examples-list";
+import { SearchResults } from "@/features/docs/search-results";
 import { SyncPanel } from "@/features/docs/sync-panel";
-import {
-  PLACEHOLDER_DOC_CATEGORIES,
-  PLACEHOLDER_DOC_PAGES,
-} from "@/lib/constants";
-import { syncClient } from "@/services/sync-client";
-import type { DocCategory, DocPage } from "@/types";
-import type { ScrapedDocumentSummary } from "@/types/scraper";
+import { useDocsStatus } from "@/hooks/use-docs-status";
+import { firstDocumentId, urlIndex } from "@/lib/doc-tree";
+import { docsClient } from "@/services/docs-client";
+import { BackendUnreachableError } from "@/services/sync-client";
+import type { ApiIndexEntry, DocTree as DocTreeData, ExampleIndexEntry, SearchResponse, SearchScope } from "@/types/docs";
 
-const UNCATEGORIZED = "Uncategorized";
+const SEARCH_DEBOUNCE_MS = 250;
 
-function toDocData(documents: readonly ScrapedDocumentSummary[]): {
-  pages: DocPage[];
-  categories: DocCategory[];
-} {
-  const categories = new Map<string, DocCategory>();
-  const pages = documents.map((doc): DocPage => {
-    const label = doc.category ?? UNCATEGORIZED;
-    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    categories.set(id, { id, label });
-    return {
-      id: String(doc.id),
-      categoryId: id,
-      title: doc.title,
-      summary: `${doc.codeExampleCount} code example(s)`,
-      body: doc.cleanedContent,
-      sourceUrl: doc.url,
-    };
-  });
-  return { pages, categories: [...categories.values()] };
+const messageOf = (e: unknown, fallback: string): string =>
+  e instanceof BackendUnreachableError ? "Cannot reach the local backend." : e instanceof Error ? e.message : fallback;
+
+/** Remembers the open page in the address bar (?doc=ID) so it survives reloads and can be shared. */
+function readDocParam(): number | null {
+  const raw = new URLSearchParams(window.location.search).get("doc");
+  const id = Number(raw);
+  return raw !== null && Number.isInteger(id) && id > 0 ? id : null;
 }
 
 export function DocsView() {
-  const [query, setQuery] = useState("");
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
-  const [scraped, setScraped] = useState<ScrapedDocumentSummary[]>([]);
+  const statusData = useDocsStatus();
+  const { status } = statusData;
+
+  const [tree, setTree] = useState<DocTreeData | null>(null);
+  const [apiEntries, setApiEntries] = useState<ApiIndexEntry[] | null>(null);
+  const [examples, setExamples] = useState<ExampleIndexEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadDocuments = useCallback(async () => {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [tab, setTab] = useState<SidebarTab>("pages");
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<SearchScope>("all");
+  const [search, setSearch] = useState<SearchResponse | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+
+  // Reload the lists whenever the index may have changed (a run finished, documents were added or removed).
+  const indexKey = status ? `${status.totals.documents}|${status.totals.apiEntries}|${status.lastSuccessAt ?? ""}|${status.lastRun?.finishedAt ?? ""}` : "";
+  const reload = useCallback(async () => {
     try {
-      setScraped(await syncClient.getDocuments());
+      const [nextTree, nextApi, nextExamples] = await Promise.all([docsClient.tree(), docsClient.api(), docsClient.luaExamples()]);
+      setTree(nextTree);
+      setApiEntries(nextApi);
+      setExamples(nextExamples);
       setLoadError(null);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load documents.");
+      setLoadError(messageOf(e, "Could not load the documentation."));
     }
   }, []);
-
   useEffect(() => {
-    void loadDocuments();
-  }, [loadDocuments]);
+    void reload();
+  }, [reload, indexKey]);
 
-  const { allPages, categories } = useMemo(() => {
-    if (scraped.length > 0) {
-      const data = toDocData(scraped);
-      return { allPages: data.pages, categories: data.categories };
+  // Initial page: ?doc= if present, otherwise the first indexed page.
+  useEffect(() => {
+    if (selectedId !== null || !tree) return;
+    setSelectedId(readDocParam() ?? firstDocumentId(tree.roots));
+  }, [tree, selectedId]);
+
+  const select = useCallback((id: number) => {
+    setSelectedId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("doc", String(id));
+    window.history.replaceState(null, "", url);
+  }, []);
+
+  // Debounced, cancellable search.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setSearch(null);
+      setSearchError(null);
+      setSearching(false);
+      return;
     }
-    return {
-      allPages: [...PLACEHOLDER_DOC_PAGES],
-      categories: [...PLACEHOLDER_DOC_CATEGORIES],
+    const controller = new AbortController();
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      docsClient
+        .search(q, scope, controller.signal)
+        .then((response) => {
+          if (controller.signal.aborted) return;
+          setSearch(response);
+          setSearchError(null);
+        })
+        .catch((e: unknown) => {
+          if (!controller.signal.aborted) setSearchError(messageOf(e, "Search failed."));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false);
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
     };
-  }, [scraped]);
+  }, [query, scope]);
 
-  const pages = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return allPages.filter((page) => {
-      if (categoryId && page.categoryId !== categoryId) return false;
-      if (!q) return true;
-      return (
-        page.title.toLowerCase().includes(q) ||
-        page.body.toLowerCase().includes(q)
-      );
-    });
-  }, [allPages, query, categoryId]);
+  const urlToId = useMemo(() => (tree ? urlIndex(tree.roots) : new Map<string, number>()), [tree]);
 
-  const selectedPage =
-    pages.find((page) => page.id === selectedPageId) ?? pages[0] ?? null;
+  const panel = query.trim() ? (
+    <SearchResults response={search} loading={searching} error={searchError} onSelect={select} />
+  ) : tab === "pages" ? (
+    tree ? <DocTree roots={tree.roots} selectedId={selectedId} onSelect={select} /> : <p className="text-sm text-muted-foreground">Loading…</p>
+  ) : tab === "api" ? (
+    apiEntries ? <ApiList entries={apiEntries} onSelect={select} /> : <p className="text-sm text-muted-foreground">Loading…</p>
+  ) : examples ? (
+    <ExamplesList examples={examples} onSelect={select} />
+  ) : (
+    <p className="text-sm text-muted-foreground">Loading…</p>
+  );
 
   return (
     <div className="flex h-full flex-col">
-      <SyncPanel onDocumentsChanged={loadDocuments} />
+      <DocsStatusBar data={statusData} syncOpen={syncOpen} onToggleSync={() => setSyncOpen((open) => !open)} />
+      {syncOpen && <SyncPanel onDocumentsChanged={() => void reload()} />}
       {loadError && (
         <p role="alert" className="border-b border-border px-4 py-2 text-sm text-red-500">
           {loadError}
@@ -93,21 +134,14 @@ export function DocsView() {
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside
           aria-label="Documentation sidebar"
-          className="max-h-[40%] shrink-0 overflow-y-auto border-b border-border md:max-h-none md:w-72 md:border-b-0 md:border-r"
+          className="max-h-[45%] shrink-0 overflow-hidden border-b border-border md:max-h-none md:w-80 md:border-b-0 md:border-r"
         >
-          <DocsSidebar
-            categories={categories}
-            pages={pages}
-            query={query}
-            onQueryChange={setQuery}
-            categoryId={categoryId}
-            onCategoryChange={setCategoryId}
-            selectedPageId={selectedPage?.id ?? null}
-            onSelectPage={setSelectedPageId}
-          />
+          <DocsSidebar query={query} onQueryChange={setQuery} scope={scope} onScopeChange={setScope} tab={tab} onTabChange={setTab}>
+            {panel}
+          </DocsSidebar>
         </aside>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto scrollbar-thin">
-          <DocsViewer page={selectedPage} />
+          <DocsViewer documentId={selectedId} urlToId={urlToId} onNavigate={select} />
         </div>
       </div>
     </div>

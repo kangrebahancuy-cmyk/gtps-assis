@@ -1,4 +1,6 @@
 import type { Db } from "@/server/db/database";
+import { indexDocument, removeChildIndex } from "@/server/db/search-index";
+import { classifyApiEntry } from "@/server/docs/classify";
 import type { ExtractedPage } from "@/server/scraper/extractor";
 import type {
   CrawlUrlStatus,
@@ -169,18 +171,25 @@ export class Repository {
     return row ?? null;
   }
 
-  private categoryId(name: string | null): number | null {
-    if (!name) return null;
-    this.db
-      .prepare(
-        `INSERT INTO categories (name, slug, created_at) VALUES (?, ?, ?)
-         ON CONFLICT(name) DO NOTHING`,
-      )
-      .run(name, slugify(name), now());
-    const row = this.db.prepare("SELECT id FROM categories WHERE name = ?").get(name) as
-      | { id: number }
-      | undefined;
-    return row?.id ?? null;
+  /**
+   * Creates the page's category chain (outermost first, linked through
+   * parent_id) and returns the id of the innermost one. Category names are
+   * unique, so a name seen under two parents keeps the first parent.
+   */
+  private categoryId(page: Pick<ExtractedPage, "category" | "categoryPath">): number | null {
+    const path = page.categoryPath && page.categoryPath.length > 0 ? page.categoryPath : page.category ? [page.category] : [];
+    let parentId: number | null = null;
+    for (const name of path) {
+      this.db
+        .prepare(
+          `INSERT INTO categories (name, slug, parent_id, created_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(name) DO NOTHING`,
+        )
+        .run(name, slugify(name), parentId, now());
+      const row = this.db.prepare("SELECT id FROM categories WHERE name = ?").get(name) as { id: number } | undefined;
+      parentId = row?.id ?? parentId;
+    }
+    return parentId;
   }
 
   /**
@@ -194,8 +203,10 @@ export class Repository {
   ): SaveOutcome {
     const ts = now();
     const existing = this.db
-      .prepare("SELECT id, content_hash, deleted_at FROM documents WHERE url = ?")
-      .get(page.url) as { id: number; content_hash: string; deleted_at: string | null } | undefined;
+      .prepare("SELECT id, content_hash, deleted_at, category_id FROM documents WHERE url = ?")
+      .get(page.url) as
+      | { id: number; content_hash: string; deleted_at: string | null; category_id: number | null }
+      | undefined;
 
     if (existing && existing.content_hash === page.contentHash) {
       // Same content: only record that it was checked. No child rows are rewritten.
@@ -205,12 +216,18 @@ export class Repository {
             WHERE id = ?`,
         )
         .run(ts, validators.etag, validators.lastModified, existing.id);
+      const categoryId = this.categoryId(page);
+      if (page.category && categoryId !== existing.category_id) {
+        // The navigation group changed (or was just learned) without the content changing.
+        this.db.prepare("UPDATE documents SET category_id = ? WHERE id = ?").run(categoryId, existing.id);
+        indexDocument(this.db, existing.id);
+      }
       return existing.deleted_at ? "restored" : "unchanged";
     }
 
     this.db.exec("BEGIN");
     try {
-      const categoryId = this.categoryId(page.category);
+      const categoryId = this.categoryId(page);
       let documentId: number;
 
       if (existing) {
@@ -224,6 +241,7 @@ export class Repository {
           )
           .run(page.title, categoryId, parentUrl, page.rawContent, page.cleanedContent,
             page.contentHash, ts, ts, validators.etag, validators.lastModified, documentId);
+        removeChildIndex(this.db, documentId);
         for (const table of ["document_sections", "code_examples", "api_entries", "document_links"]) {
           this.db.prepare(`DELETE FROM ${table} WHERE document_id = ?`).run(documentId);
         }
@@ -256,11 +274,11 @@ export class Repository {
       });
 
       const api = this.db.prepare(
-        `INSERT INTO api_entries (document_id, name, signature, params_json, description, returns)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO api_entries (document_id, name, signature, params_json, description, returns, kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const e of page.apiEntries) {
-        api.run(documentId, e.name, e.signature, JSON.stringify(e.params), e.description, e.returns);
+        api.run(documentId, e.name, e.signature, JSON.stringify(e.params), e.description, e.returns, classifyApiEntry(e.name));
       }
 
       const link = this.db.prepare(
@@ -268,6 +286,7 @@ export class Repository {
       );
       for (const l of page.links) link.run(documentId, l.text, l.url);
 
+      indexDocument(this.db, documentId);
       this.db.exec("COMMIT");
       if (existing) return existing.deleted_at ? "restored" : "updated";
       return "inserted";

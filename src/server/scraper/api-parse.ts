@@ -7,6 +7,8 @@ const SIGNATURE_PATTERN =
 const CALLBACK_PATTERN =
   /^([A-Za-z_][\w]*)\s*\(\s*function\s*\(([^()]*)\)\s*$/;
 
+const TYPE_WORD = /^[A-Za-z_][\w.|<>[\]?]*$/;
+
 function splitParams(raw: string): string[] {
   return raw
     .split(",")
@@ -48,9 +50,11 @@ export function readEntryDetails(
   let returns: string | null = null;
   let description: string | null = null;
   for (const line of lines) {
-    const ret = /^Returns?\s*[:\-]?\s*(\S.*)$/i.exec(line);
-    if (ret && returns === null) {
-      returns = ret[1] ?? null;
+    // "Returns: string" / "Returns void" is a return type. "Returns the name for
+    // this avatar." is a description: without a colon only a single type-like word counts.
+    const ret = /^Returns?\s*(:|-)?\s*(\S.*)$/i.exec(line);
+    if (ret && (ret[1] !== undefined || TYPE_WORD.test(ret[2] ?? ""))) {
+      if (returns === null) returns = ret[2] ?? null;
       continue;
     }
     if (/^(Parameters?|Returns?)\s*:?$/i.test(line)) continue;

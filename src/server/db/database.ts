@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { getDatabasePath } from "@/server/scraper/config";
 import { CRAWL_URLS_SQL, SCHEMA_SQL, SCHEMA_VERSION } from "@/server/db/schema";
+import { backfillApiKinds, rebuildSearchIndex } from "@/server/db/search-index";
 
 export type Db = DatabaseSync;
 
@@ -52,6 +53,34 @@ export function migrateFromV1(db: Db): void {
   }
 }
 
+/** v2 -> v3: api_entries gains a `kind` column. */
+function addApiKindColumn(db: Db): void {
+  const exists = db
+    .prepare("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'api_entries'")
+    .get();
+  if (exists && !hasColumn(db, "api_entries", "kind")) {
+    db.exec("ALTER TABLE api_entries ADD COLUMN kind TEXT");
+  }
+}
+
+/**
+ * A database created before full-text search existed has documents but empty
+ * indexes: classify the old API entries and build the indexes once.
+ */
+function populateSearchIndexIfNeeded(db: Db): void {
+  const documents = (db.prepare("SELECT COUNT(*) AS n FROM documents").get() as { n: number }).n;
+  const indexed = (db.prepare("SELECT COUNT(*) AS n FROM search_documents").get() as { n: number }).n;
+  db.exec("BEGIN");
+  try {
+    backfillApiKinds(db);
+    if (documents > 0 && indexed === 0) rebuildSearchIndex(db);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 /**
  * Opens (and migrates) a SQLite database. Pass ":memory:" for tests.
  * Uses Node's built-in `node:sqlite`, so no native addon is required.
@@ -62,7 +91,9 @@ export function openDatabase(path: string = getDatabasePath()): Db {
   db.exec("PRAGMA foreign_keys = ON;");
   if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL;");
   migrateFromV1(db);
+  addApiKindColumn(db);
   db.exec(SCHEMA_SQL);
+  populateSearchIndexIfNeeded(db);
   db.prepare(
     `INSERT INTO sync_metadata (key, value, updated_at) VALUES ('schema_version', ?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
