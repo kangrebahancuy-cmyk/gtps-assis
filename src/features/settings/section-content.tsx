@@ -1,3 +1,4 @@
+import { AiSettingsPanel } from "@/features/settings/ai/ai-settings-panel";
 import { AppearancePanel } from "@/features/settings/appearance-panel";
 import { LocalDataPanel } from "@/features/settings/local-data-panel";
 import {
@@ -7,28 +8,9 @@ import {
 import type { SettingsSectionId } from "@/types";
 
 const PLACEHOLDER_ROWS: Record<
-  Exclude<SettingsSectionId, "appearance" | "local-data">,
+  Exclude<SettingsSectionId, "appearance" | "local-data" | "providers" | "models">,
   readonly PlaceholderRow[]
 > = {
-  providers: [
-    {
-      label: "Provider connections",
-      description: "API keys and endpoints for AI providers.",
-      status: "No provider connected",
-    },
-  ],
-  models: [
-    {
-      label: "Default chat model",
-      description: "Model used for new conversations.",
-      status: "No model available",
-    },
-    {
-      label: "Default code model",
-      description: "Model used for Lua generation.",
-      status: "No model available",
-    },
-  ],
   documentation: [
     {
       label: "Documentation sources",
@@ -69,5 +51,6 @@ interface SectionContentProps {
 export function SectionContent({ id }: SectionContentProps) {
   if (id === "appearance") return <AppearancePanel />;
   if (id === "local-data") return <LocalDataPanel />;
+  if (id === "providers" || id === "models") return <AiSettingsPanel section={id} />;
   return <PlaceholderPanel rows={PLACEHOLDER_ROWS[id]} />;
 }

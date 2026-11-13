@@ -56,3 +56,8 @@ export function createConfig(
 export function getDatabasePath(): string {
   return process.env.GTPS_DB_PATH ?? "data/gtps-assistant.db";
 }
+
+/** Where AI provider keys and defaults are stored (local file, gitignored). Override with GTPS_AI_CONFIG_PATH. */
+export function getAiConfigPath(): string {
+  return process.env.GTPS_AI_CONFIG_PATH ?? "data/ai-config.json";
+}

@@ -43,11 +43,11 @@ npm run start      # serve the production build
 | Area | Working | Not yet available |
 | --- | --- | --- |
 | Shell | Collapsible sidebar, mobile drawer, active indicator, dark/light theme | - |
-| Chats | New chat, local history list, search by title, delete | Sending messages (no provider) |
+| Chats | New chat, local history list, search by title, delete | Sending messages (the AI service exists; the chat UI is not wired to it yet) |
 | Composer | Typing, example prompts fill the draft | Send button is disabled |
 | Documentation | Explorer over the indexed GTPS Cloud docs: hierarchy, FTS5 search, Markdown viewer, status | Content appears only after a sync has been run |
 | Lua Workspace | Monaco editor, file tabs, live preview, local persistence | Download, Lua generation |
-| Settings | Theme switch, local data size and clearing | Providers, models, sync, chat preferences |
+| Settings | Theme switch, local data size and clearing, AI providers (Gemini, Groq), model discovery and default model | Sync and chat preferences |
 
 The documentation explorer shows nothing until a synchronization has been run:
 there are no sample pages any more.
@@ -187,14 +187,90 @@ are converted to Markdown the next time they change on the site, or run a
 **Full sync** to refresh everything at once (changed hashes show up as
 "updated" once).
 
-AI integration is not part of this step.
-
 ### Tests
 
 ```bash
 npm test        # server tests (node:test): extraction, FTS, explorer, sync, end-to-end over local HTTP
-npm run test:ui # server-side render tests for the explorer components (tests/ui)
+npm run test:ui # server-side render tests for the explorer and AI settings components (tests/ui)
 ```
+
+## AI providers (Step 5)
+
+Google Gemini and Groq are interchangeable behind one backend service. The
+chat UI is **not** connected yet; the service and a browser client
+(`src/services/ai-client.ts`) are ready so it can be, without UI changes.
+
+### Setup
+
+1. Get a key: [Gemini](https://aistudio.google.com/apikey), [Groq](https://console.groq.com/keys).
+2. Either open **Settings → AI Providers** and paste it, or copy `.env.example`
+   to `.env.local` and fill `GEMINI_API_KEY` / `GROQ_API_KEY`. A key saved in
+   Settings wins over the environment one.
+3. Use **Test connection**, then pick a default in **Settings → Models**.
+
+### How it works
+
+- `src/server/ai/` holds the provider abstraction (`AiProvider`), the two
+  adapters, the service (`AiService`) and the HTTP handlers. Routes under
+  `src/app/api/ai/` (`settings`, `config`, `models`, `test`, `chat`) only
+  delegate to them.
+- **Models are discovered live** from each provider; no model names are
+  hardcoded. The list shows provider, model ID, name, context window (when the
+  provider reports it), coding capability, free-tier status and availability.
+  Lists are cached for 10 minutes; **Refresh models** bypasses the cache and an
+  older list is kept (marked stale) if a refresh fails.
+- **Free tier is never assumed.** Neither API says whether a model is free, so
+  every model shows "Not verified" and links to the provider's rate-limit page.
+  Free-tier eligibility is also kept separate from **observed quota**: Groq's
+  `x-ratelimit-*` headers are shown as "reported in the last response";
+  Gemini reports no remaining quota, so none is shown.
+- **Coding capability** is "Code-focused (by name)" only when the model name
+  says so, otherwise "Not known". Groq marks non-chat/inactive models by name
+  heuristics, shown as "guessed from the name".
+- **Streaming**: `POST /api/ai/chat` returns server-sent events
+  (`start`, `delta`, `usage`, `done`, `error`) with the same shape for both
+  providers. Errors before the provider accepted the request are normal JSON
+  errors with a matching status; later ones arrive as an `error` event.
+- **Errors and rate limits**: provider errors are mapped to a fixed set of kinds
+  (invalid key, rate limited, model not found, ...) with sanitized messages.
+  429/5xx/network failures are retried with backoff; a short `Retry-After` is
+  waited out, a long one is reported (with `Retry-After`) and chat to that
+  provider is paused locally for that period (capped at 15 min) instead of
+  hammering the API. Testing a connection and refreshing models are not blocked
+  by the pause.
+- **Switching provider** = changing the default (or passing `provider`/`model`
+  in one request). The calling code and the events are identical.
+
+### Security
+
+- Keys are used only by the local backend. They are never returned by any API
+  (only `configured`, source and the last 4 characters), never put in a URL, and
+  redacted from error messages. The browser sends a key only when you save or
+  test it.
+- Saved keys live in `data/ai-config.json` as **plain text** (file mode 0600,
+  gitignored). That guards against accidental commits and other local users, not
+  against anyone who can read your files. `.env*` is ignored except
+  `.env.example`, which has no values.
+- `/api/ai/*` answers only requests addressed to `localhost`, `127.0.0.1` or
+  `[::1]` (blocks DNS rebinding), rejects cross-site/cross-origin requests and
+  requires `application/json` for writes. Set `GTPS_ALLOWED_HOSTS` to allow
+  another host name. There is no user login: anyone who can reach the app as
+  localhost can use your keys, so do not expose the dev server to a network.
+- All input is validated (provider, key format, model ID, message count/size,
+  temperature, token limit).
+
+### What is and is not verified
+
+- Tests (`tests/ai-*.test.ts`, `tests/sse.test.ts`, `tests/ui/ai-settings.test.tsx`)
+  run the real adapters, service, handlers and client over real HTTP against
+  **local imitations** of the Gemini and Groq APIs written from their public
+  documentation. **The real services were never contacted**, so field names,
+  error formats and rate-limit headers are as documented, not proven. In
+  particular the Groq `/models` response fields are not specified in the docs
+  and are treated as optional.
+- The settings UI was only server-rendered in tests, never opened in a browser.
+  `next build`, ESLint and the Cheerio extractor test have not been run in this
+  environment because the packages are not installed here.
 
 ## Project structure
 
@@ -207,7 +283,7 @@ src/
   features/       Feature modules: dashboard, chat, docs, workspace, settings
   hooks/          Reusable React hooks
   lib/            Constants, navigation helpers, markdown parser, utilities
-  server/         Scraper, sync service + scheduler, SQLite layer, docs explorer service (server only)
+  server/         Scraper, sync service + scheduler, SQLite layer, docs explorer, AI providers/service (server only)
   services/       Browser storage and scraper API client
   store/          Zustand stores (ui, chat, workspace)
   types/          Shared TypeScript types
@@ -228,4 +304,5 @@ src/
 2. **Step 2:** documentation scraper and local SQLite storage.
 3. **Step 3:** synchronization engine (incremental sync, scheduler).
 4. **Step 4:** documentation explorer (hierarchy, FTS5 search, viewer, status).
-5. Later steps: AI provider integration, Lua generation.
+5. **Step 5:** multi-provider AI integration (Gemini, Groq), settings, unified service.
+6. Later steps: chat integration, Lua generation.
