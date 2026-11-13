@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --no-warnings --test \"tests/**/*.test.ts\"",
     "test:ui": "node --import tsx --no-warnings --test \"tests/ui/**/*.test.tsx\"",
-    "scrape": "node --import tsx --no-warnings scripts/scrape.ts"
+    "scrape": "node --import tsx --no-warnings scripts/scrape.ts",
+    "test:browser": "node --import tsx --no-warnings --test --test-concurrency=1 \"tests/browser/*.browser.ts\""
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

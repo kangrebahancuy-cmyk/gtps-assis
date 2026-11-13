@@ -27,6 +27,8 @@ export interface Override {
   destroyAfterStream?: boolean;
   /** Keep the response open (silent) after streaming `stream`. */
   holdOpen?: boolean;
+  /** Milliseconds between streamed chunks (default 2). */
+  chunkDelayMs?: number;
   /** Never answer. */
   hang?: boolean;
   /** Drop the connection without answering. */
@@ -55,10 +57,11 @@ export function splitBytes(text: string, size: number): Buffer[] {
   return out;
 }
 
-async function writeChunks(res: ServerResponse, chunks: Buffer[]): Promise<void> {
+async function writeChunks(res: ServerResponse, chunks: Buffer[], delayMs = 2): Promise<void> {
   for (const chunk of chunks) {
+    if (res.destroyed) return;
     res.write(chunk);
-    await sleep(2);
+    await sleep(delayMs);
   }
 }
 
@@ -92,7 +95,7 @@ async function start(spec: Spec): Promise<Fake> {
         if (override.hang) return;
         if (override.stream) {
           res.writeHead(200, { "content-type": "text/event-stream", ...override.headers });
-          await writeChunks(res, override.stream);
+          await writeChunks(res, override.stream, override.chunkDelayMs);
           if (override.destroyAfterStream) return incoming.socket.destroy();
           if (override.holdOpen) return;
           return res.end();
@@ -214,4 +217,10 @@ export function startFakeGroq(): Promise<Fake> {
     models: () => ({ body: { object: "list", data: groqModels }, headers: GROQ_RATE_HEADERS }),
     chat: (_req, parts) => ({ stream: groqStream(parts), headers: GROQ_RATE_HEADERS }),
   });
+}
+
+/** One Buffer per server-sent event (so a delay between chunks is a delay between pieces of text). */
+export function groqEvents(parts: string[], finishReason = "stop"): Buffer[] {
+  const chunk = (delta: object, finish: string | null) => Buffer.from(`data: ${JSON.stringify({ id: "c1", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
+  return [...parts.map((content, i) => chunk(i === 0 ? { role: "assistant", content } : { content }, null)), chunk({}, finishReason), Buffer.from("data: [DONE]\n\n")];
 }

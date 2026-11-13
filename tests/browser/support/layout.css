@@ -1,0 +1,11 @@
+/* Tailwind is not available here: these few rules stand in for the layout utilities the chat relies on for scrolling. */
+.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}.min-h-0{min-height:0}.h-full{height:100%}
+.relative{position:relative}.overflow-y-auto{overflow-y:auto}.min-w-0{min-width:0}.mx-auto{margin-left:auto;margin-right:auto}
+.w-full{width:100%}.max-w-3xl{max-width:48rem}.hidden{display:none}.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.absolute{position:absolute}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+body{font-family:sans-serif;font-size:14px}pre{overflow-x:auto}textarea{resize:none}
+*,*::before,*::after{box-sizing:border-box}
+svg{width:16px;height:16px}.items-end{align-items:flex-end}.items-center{align-items:center}.justify-between{justify-content:space-between}
+.whitespace-pre-wrap{white-space:pre-wrap}.break-words{overflow-wrap:break-word}.gap-2{gap:.5rem}.flex-wrap{flex-wrap:wrap}
+textarea{font:inherit;padding:4px;border:1px solid #888}
+.right-1{right:.25rem}.top-1\/2{top:50%}.-translate-y-1\/2{transform:translateY(-50%)}

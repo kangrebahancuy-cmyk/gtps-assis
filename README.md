@@ -43,11 +43,11 @@ npm run start      # serve the production build
 | Area | Working | Not yet available |
 | --- | --- | --- |
 | Shell | Collapsible sidebar, mobile drawer, active indicator, dark/light theme | - |
-| Chats | New chat, local history list, search by title, delete | Sending messages (the AI service exists; the chat UI is not wired to it yet) |
-| Composer | Typing, example prompts fill the draft | Send button is disabled |
+| Chats | AI chat with streaming, Markdown and Lua highlighting; history in IndexedDB (search, rename, delete, export/import) | Documentation-aware answers (no RAG yet) |
+| Composer | Multiline input, Enter/Shift+Enter, Stop, example prompts | - |
 | Documentation | Explorer over the indexed GTPS Cloud docs: hierarchy, FTS5 search, Markdown viewer, status | Content appears only after a sync has been run |
 | Lua Workspace | Monaco editor, file tabs, live preview, local persistence | Download, Lua generation |
-| Settings | Theme switch, local data size and clearing, AI providers (Gemini, Groq), model discovery and default model | Sync and chat preferences |
+| Settings | Theme switch, local data size and clearing, AI providers (Gemini, Groq), model discovery and default model, chat history export/import/clear | Sync preferences |
 
 The documentation explorer shows nothing until a synchronization has been run:
 there are no sample pages any more.
@@ -197,8 +197,7 @@ npm run test:ui # server-side render tests for the explorer and AI settings comp
 ## AI providers (Step 5)
 
 Google Gemini and Groq are interchangeable behind one backend service. The
-chat UI is **not** connected yet; the service and a browser client
-(`src/services/ai-client.ts`) are ready so it can be, without UI changes.
+chat UI (Step 6, below) uses the browser client `src/services/ai-client.ts`.
 
 ### Setup
 
@@ -272,6 +271,104 @@ chat UI is **not** connected yet; the service and a browser client
   `next build`, ESLint and the Cheerio extractor test have not been run in this
   environment because the packages are not installed here.
 
+## AI chat (Step 6)
+
+A ChatGPT-style chat on top of the Step 5 providers. Everything is stored in the
+browser; there is no login and no cloud database.
+
+### Features
+
+- New chat, welcome screen with example prompts, multiline composer that grows
+  up to 220 px, character limit of 100,000.
+- Streaming replies, Markdown (no raw HTML; only `http(s)` links), Lua syntax
+  highlighting in code blocks, copy for messages and code.
+- **Stop** a reply (keeps the text received so far), **Regenerate** the last
+  reply (with the model currently selected), **Edit** a question (the later
+  messages are removed and the edited question is answered again; there is no
+  branching).
+- Auto-scroll that follows new text, stops when you scroll up, and offers a
+  "Scroll to latest message" button.
+- Loading states and errors on the reply itself (invalid key, rate limit,
+  network, interrupted reply) with a retry; a chat can keep working after an
+  error.
+- Provider and model selectors in the header. The choice is remembered **per
+  conversation**, and the last choice is used for new chats.
+- Several chats may generate at the same time (one reply per chat).
+
+### Keyboard shortcuts
+
+| Where | Keys | Action |
+| --- | --- | --- |
+| Composer | Enter | Send |
+| Composer | Shift+Enter | New line |
+| Composer | Esc | Stop generating |
+| Editing a question | Ctrl+Enter | Save and resend |
+| Editing a question | Esc | Cancel |
+| Renaming a chat | Enter / Esc | Save / cancel |
+
+### History storage (IndexedDB)
+
+Database `gtps-assistant-chat`, version 1:
+
+| Store | Key | Index | Content |
+| --- | --- | --- | --- |
+| `conversations` | `id` | `updatedAt` | title, titleSource (auto/manual), createdAt, updatedAt, provider, model, messageCount, metadata |
+| `messages` | `id` | `conversationId` | order, role, content, createdAt, updatedAt, status, provider, model, meta (finish reason, usage, error, edited) |
+| `meta` | `key` | - | open chat, last provider/model |
+
+Writes use one transaction per change and abort as a whole when something
+fails. While a reply streams it is saved at most every 400 ms, so closing the
+tab loses at most that much; on the next load a reply still marked as
+streaming is shown as "interrupted". If IndexedDB is unavailable (some private
+modes) the app falls back to in-memory history and says so on screen; it then
+does **not** survive a refresh.
+
+Search is a client-side substring match over titles and message text (all
+words must match). Rename marks the title as manual, so it is no longer
+replaced by the first question.
+
+### Export / import
+
+**Settings → Chat history → Export JSON** downloads
+`{"format": "gtps-assistant-chat-export", "version": 1, "exportedAt", "conversations": [{...conversation, "messages": [...]}]}`.
+Import validates the file strictly (type, size up to 50 MB, roles, statuses,
+timestamps) and changes nothing when it is invalid. Chats whose id already
+exists are skipped (not overwritten), clashing message ids are remapped, and
+"streaming" replies become "interrupted". API keys are never part of an export
+(they are never in the browser).
+
+### Tests
+
+```bash
+node --import tsx --no-warnings --test tests/*.test.ts          # server, engine, storage contract (memory)
+node --import tsx --no-warnings --test tests/ui/*.test.tsx       # server-rendered UI
+npm run test:browser                                             # real Chromium + real IndexedDB
+```
+
+`tests/chat-engine.test.ts` drives the real controller against the real AI
+client, handlers and service over HTTP to local fake Gemini/Groq servers.
+`tests/browser/*.browser.ts` bundles the real chat UI with esbuild and runs it
+in Chromium through Playwright (it needs Playwright and esbuild installed; they
+are not in `package.json`).
+
+### What is and is not verified
+
+- Verified in real Chromium with real IndexedDB: new and multiple
+  conversations, reload and browser-restart persistence, a page closed in the
+  middle of a reply, model switching and per-chat memory, streaming, stop,
+  regenerate, edit, search, rename, delete, export/import/clear, error
+  recovery, auto-scroll.
+- **The real Gemini and Groq services were never contacted**; only local
+  imitations were used.
+- **Tailwind CSS cannot be built here**, so the real styling, layout on phones,
+  dark mode and visual polish were **not** seen. The browser tests use a few
+  stand-in CSS rules for layout. `next build` and ESLint were not run, and the
+  React components were not type-checked against `@types/react` (not installed
+  here).
+- Several browser tabs open at once are not coordinated: the last write wins.
+- The assistant knows nothing about GTPS documentation yet (no RAG); its system
+  prompt tells it not to guess API names.
+
 ## Project structure
 
 ```
@@ -282,10 +379,11 @@ src/
     ui/           Reusable primitives (button, input, card, badge, switch, sheet)
   features/       Feature modules: dashboard, chat, docs, workspace, settings
   hooks/          Reusable React hooks
-  lib/            Constants, navigation helpers, markdown parser, utilities
+  lib/            Constants, navigation helpers, markdown parser, Lua highlighter, utilities
+    chat/         Chat engine: controller, IndexedDB/memory repositories, context, search, export
   server/         Scraper, sync service + scheduler, SQLite layer, docs explorer, AI providers/service (server only)
   services/       Browser storage and scraper API client
-  store/          Zustand stores (ui, chat, workspace)
+  store/          Zustand stores (ui, workspace)
   types/          Shared TypeScript types
 ```
 
@@ -293,8 +391,8 @@ src/
 
 - The Monaco editor loads its assets from a CDN at runtime, so the Lua
   workspace editor needs internet access in the browser.
-- All data is stored in the browser's `localStorage`. Use **Settings → Local
-  Data** to clear it.
+- Settings, workspace files and theme are stored in `localStorage`; chat history
+  is in IndexedDB. Use **Settings → Local Data** to clear everything.
 - Fonts use the system font stack, so builds do not depend on external font
   downloads.
 
@@ -305,4 +403,5 @@ src/
 3. **Step 3:** synchronization engine (incremental sync, scheduler).
 4. **Step 4:** documentation explorer (hierarchy, FTS5 search, viewer, status).
 5. **Step 5:** multi-provider AI integration (Gemini, Groq), settings, unified service.
-6. Later steps: chat integration, Lua generation.
+6. **Step 6:** AI chat (streaming, history in IndexedDB, model selector).
+7. Later steps: documentation-aware answers (RAG), Lua generation.

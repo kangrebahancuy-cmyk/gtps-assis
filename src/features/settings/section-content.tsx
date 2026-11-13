@@ -1,4 +1,5 @@
 import { AiSettingsPanel } from "@/features/settings/ai/ai-settings-panel";
+import { ChatHistoryPanel } from "@/features/settings/chat-history-panel";
 import { AppearancePanel } from "@/features/settings/appearance-panel";
 import { LocalDataPanel } from "@/features/settings/local-data-panel";
 import {
@@ -8,7 +9,7 @@ import {
 import type { SettingsSectionId } from "@/types";
 
 const PLACEHOLDER_ROWS: Record<
-  Exclude<SettingsSectionId, "appearance" | "local-data" | "providers" | "models">,
+  Exclude<SettingsSectionId, "appearance" | "local-data" | "providers" | "models" | "chat">,
   readonly PlaceholderRow[]
 > = {
   documentation: [
@@ -30,18 +31,6 @@ const PLACEHOLDER_ROWS: Record<
       status: "Never",
     },
   ],
-  chat: [
-    {
-      label: "Stream responses",
-      description: "Show replies as they are generated.",
-      toggle: true,
-    },
-    {
-      label: "Send on Enter",
-      description: "Press Enter to send, Shift+Enter for a new line.",
-      toggle: true,
-    },
-  ],
 };
 
 interface SectionContentProps {
@@ -51,6 +40,7 @@ interface SectionContentProps {
 export function SectionContent({ id }: SectionContentProps) {
   if (id === "appearance") return <AppearancePanel />;
   if (id === "local-data") return <LocalDataPanel />;
+  if (id === "chat") return <ChatHistoryPanel />;
   if (id === "providers" || id === "models") return <AiSettingsPanel section={id} />;
   return <PlaceholderPanel rows={PLACEHOLDER_ROWS[id]} />;
 }

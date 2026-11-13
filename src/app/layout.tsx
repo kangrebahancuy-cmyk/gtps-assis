@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ChatProvider } from "@/features/chat/chat-provider";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 import { STORAGE_KEYS } from "@/services/storage";
 
@@ -32,7 +33,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="font-sans">
-        <AppShell>{children}</AppShell>
+        <ChatProvider>
+          <AppShell>{children}</AppShell>
+        </ChatProvider>
       </body>
     </html>
   );

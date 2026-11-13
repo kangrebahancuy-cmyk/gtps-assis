@@ -1,26 +1,17 @@
 "use client";
 
-import {
-  MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Logo } from "@/components/layout/logo";
 import { NavIcon } from "@/components/layout/nav-icon";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useFilteredSessions } from "@/hooks/use-filtered-sessions";
-import { useHydrated } from "@/hooks/use-hydrated";
+import { useChat } from "@/features/chat/chat-provider";
+import { HistoryList } from "@/features/chat/history-list";
 import { NAV_ITEMS } from "@/lib/constants";
 import { isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-import { useChatStore } from "@/store/chat-store";
 import { useUiStore } from "@/store/ui-store";
 
 interface SidebarContentProps {
@@ -39,29 +30,17 @@ export function SidebarContent({
 }: SidebarContentProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const hydrated = useHydrated();
+  const { chat } = useChat();
 
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  const startNewChat = useChatStore((state) => state.startNewChat);
-  const setActiveSession = useChatStore((state) => state.setActiveSession);
-  const deleteSession = useChatStore((state) => state.deleteSession);
-  const activeSessionId = useChatStore((state) => state.activeSessionId);
-  const searchQuery = useChatStore((state) => state.searchQuery);
-  const setSearchQuery = useChatStore((state) => state.setSearchQuery);
-  const sessions = useFilteredSessions();
-
-  const onChatRoute = pathname === "/chat";
-
-  function handleNewChat() {
-    startNewChat();
+  function goToChat() {
     router.push("/chat");
     onNavigate?.();
   }
 
-  function handleOpenSession(id: string) {
-    setActiveSession(id);
-    router.push("/chat");
-    onNavigate?.();
+  function handleNewChat() {
+    void chat?.newChat();
+    goToChat();
   }
 
   function handleExpandAndSearch() {
@@ -119,74 +98,11 @@ export function SidebarContent({
           >
             <Search />
           </Button>
-        ) : (
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search chats"
-              aria-label="Search chats"
-              className="pl-8"
-            />
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* Chat history */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 scrollbar-thin">
-        {!collapsed && (
-          <>
-            <h2 className="px-2 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Chat History
-            </h2>
-            {!hydrated ? null : sessions.length === 0 ? (
-              <p className="px-2 py-2 text-sm text-muted-foreground">
-                {searchQuery.trim()
-                  ? "No chats match your search."
-                  : "No chats yet."}
-              </p>
-            ) : (
-              <ul className="space-y-0.5">
-                {sessions.map((session) => {
-                  const active = onChatRoute && session.id === activeSessionId;
-                  return (
-                    <li key={session.id} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSession(session.id)}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left text-sm transition-colors hover:bg-accent",
-                          active && "bg-accent text-accent-foreground",
-                        )}
-                      >
-                        <MessageSquare
-                          className="size-4 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{session.title}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteSession(session.id)}
-                        aria-label={`Delete chat ${session.title}`}
-                        className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                      >
-                        <Trash2 className="size-3.5" aria-hidden="true" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
+      {collapsed ? <div className="min-h-0 flex-1" /> : <HistoryList onOpenChat={goToChat} />}
 
       {/* Primary navigation */}
       <nav

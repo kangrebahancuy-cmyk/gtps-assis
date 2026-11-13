@@ -5,16 +5,15 @@ import { useRouter } from "next/navigation";
 
 import { FeatureCard } from "@/features/dashboard/feature-card";
 import { APP_NAME, APP_TAGLINE, EXAMPLE_PROMPTS } from "@/lib/constants";
-import { useChatStore } from "@/store/chat-store";
+import { useChat } from "@/features/chat/chat-provider";
 
 export function DashboardView() {
   const router = useRouter();
-  const startNewChat = useChatStore((state) => state.startNewChat);
-  const setComposerDraft = useChatStore((state) => state.setComposerDraft);
+  const { chat } = useChat();
 
-  function handlePrompt(prompt: string) {
-    startNewChat();
-    setComposerDraft(prompt);
+  async function handlePrompt(prompt: string) {
+    await chat?.newChat();
+    chat?.setDraftText(prompt);
     router.push("/chat");
   }
 
@@ -37,7 +36,7 @@ export function DashboardView() {
             icon={Sparkles}
             title="AI Lua Script Generator"
             description="Describe what you need and get GTPS-ready Lua."
-            status="Not available yet"
+            status="Chat available"
           />
           <FeatureCard
             href="/docs"
@@ -58,7 +57,7 @@ export function DashboardView() {
             icon={Cpu}
             title="AI Model Configuration"
             description="Choose providers and models for your assistant."
-            status="Not available yet"
+            status="Gemini and Groq"
           />
         </div>
       </section>
@@ -75,7 +74,7 @@ export function DashboardView() {
             <li key={prompt}>
               <button
                 type="button"
-                onClick={() => handlePrompt(prompt)}
+                onClick={() => void handlePrompt(prompt)}
                 className="w-full rounded-lg border border-border bg-card px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
               >
                 {prompt}
@@ -85,7 +84,7 @@ export function DashboardView() {
         </ul>
         <p className="mt-3 text-xs text-muted-foreground">
           Selecting a prompt opens a new chat and fills the composer. Sending
-          is disabled until an AI provider is connected.
+          needs a connected AI provider (Settings → AI Providers).
         </p>
       </section>
     </div>
