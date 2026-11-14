@@ -57,6 +57,15 @@ export function validateChatRequest(body: unknown): ChatRequest {
   if (!messages.some((m) => m.role === "user")) throw invalid("At least one user message is required.");
 
   const request: ChatRequest = { messages };
+  if (body.docs !== undefined) {
+    if (typeof body.docs !== "boolean") throw invalid("docs must be true or false.");
+    if (body.docs) {
+      // The server writes the system prompt itself; the last message must be the user's question.
+      request.docs = true;
+      request.messages = messages.filter((m) => m.role !== "system");
+      if (request.messages[request.messages.length - 1]?.role !== "user") throw invalid("With docs enabled, the last message must be from the user.");
+    }
+  }
   if (body.provider !== undefined) request.provider = validateProvider(body.provider);
   if (body.model !== undefined) request.model = validateModelId(body.model);
   if (body.temperature !== undefined) {

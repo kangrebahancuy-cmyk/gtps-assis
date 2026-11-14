@@ -1,6 +1,7 @@
 import { assertLocalRequest } from "@/server/ai/guard";
 import { AiError, toErrorInfo } from "@/server/ai/errors";
 import type { AiService } from "@/server/ai/service";
+import type { RagPipeline } from "@/server/rag/pipeline";
 import { validateApiKey, validateChatRequest, validateModelId, validateProvider } from "@/server/ai/validate";
 import { PROVIDER_IDS, type AiDefaults, type AiErrorKind, type ChatStreamEvent, type ProviderId } from "@/types/ai";
 
@@ -131,13 +132,25 @@ const sse = (event: ChatStreamEvent): Uint8Array => encoder.encode(`data: ${JSON
  * are returned as normal JSON error responses with a matching status; errors after that
  * arrive as a final `error` event.
  */
-export const handleChat = (service: AiService) =>
+export const handleChat = (service: AiService, rag?: RagPipeline) =>
   guarded(true, async (request) => {
     const chat = validateChatRequest(await readJson(request, 1_000_000));
     const abort = new AbortController();
     request.signal.addEventListener("abort", () => abort.abort(), { once: true });
 
-    const iterator = service.streamChat(chat, abort.signal)[Symbol.asyncIterator]();
+    // Documentation search (Step 7): done here, on the server, before the provider is called.
+    const prepared = chat.docs && rag ? rag.prepare(chat) : null;
+    const providerRequest = prepared ? prepared.request : chat;
+    const source = service.streamChat(providerRequest, abort.signal);
+    const events: AsyncGenerator<ChatStreamEvent> = prepared
+      ? (async function* () {
+          for await (const event of source) {
+            yield event;
+            if (event.type === "start") yield { type: "context", context: prepared.context };
+          }
+        })()
+      : source;
+    const iterator = events[Symbol.asyncIterator]();
     const buffered: ChatStreamEvent[] = [];
     let finished = false;
     try {
@@ -149,7 +162,7 @@ export const handleChat = (service: AiService) =>
           break;
         }
         buffered.push(next.value);
-        if (next.value.type !== "start") break;
+        if (next.value.type !== "start" && next.value.type !== "context") break;
       }
     } catch (error) {
       abort.abort();

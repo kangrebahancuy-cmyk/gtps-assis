@@ -32,6 +32,7 @@ async function boot(repository: ChatRepository = new MemoryChatRepository(), ext
   const chat = new ChatController({ repository, ai: createAiClient({ fetch: be.fetch, streamIdleMs: 3000 }), persistThrottleMs: 5, ...extra });
   opened.push(chat);
   await chat.init();
+  chat.setDocsSearch(false); // these tests are about the chat engine; documentation search has its own tests (rag-chat.test.ts)
   return chat;
 }
 const GROQ = { provider: "groq" as const, model: "llama-demo-70b" };

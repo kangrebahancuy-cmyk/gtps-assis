@@ -73,6 +73,7 @@ export function DocsView() {
     setSelectedId(id);
     const url = new URL(window.location.href);
     url.searchParams.set("doc", String(id));
+    url.hash = "";
     window.history.replaceState(null, "", url);
   }, []);
 

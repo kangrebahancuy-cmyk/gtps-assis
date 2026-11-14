@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { getDatabasePath } from "@/server/scraper/config";
 import { CRAWL_URLS_SQL, SCHEMA_SQL, SCHEMA_VERSION } from "@/server/db/schema";
 import { backfillApiKinds, rebuildSearchIndex } from "@/server/db/search-index";
+import { rebuildChunkIndex } from "@/server/rag/chunk-index";
 
 export type Db = DatabaseSync;
 
@@ -70,10 +71,12 @@ function addApiKindColumn(db: Db): void {
 function populateSearchIndexIfNeeded(db: Db): void {
   const documents = (db.prepare("SELECT COUNT(*) AS n FROM documents").get() as { n: number }).n;
   const indexed = (db.prepare("SELECT COUNT(*) AS n FROM search_documents").get() as { n: number }).n;
+  const chunked = (db.prepare("SELECT COUNT(*) AS n FROM doc_chunks").get() as { n: number }).n;
   db.exec("BEGIN");
   try {
     backfillApiKinds(db);
     if (documents > 0 && indexed === 0) rebuildSearchIndex(db);
+    else if (documents > 0 && chunked === 0) rebuildChunkIndex(db); // a database from before Step 7 gets its retrieval index once
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");

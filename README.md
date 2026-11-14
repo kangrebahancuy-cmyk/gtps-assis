@@ -43,7 +43,7 @@ npm run start      # serve the production build
 | Area | Working | Not yet available |
 | --- | --- | --- |
 | Shell | Collapsible sidebar, mobile drawer, active indicator, dark/light theme | - |
-| Chats | AI chat with streaming, Markdown and Lua highlighting; history in IndexedDB (search, rename, delete, export/import) | Documentation-aware answers (no RAG yet) |
+| Chats | AI chat with streaming, Markdown and Lua highlighting; history in IndexedDB (search, rename, delete, export/import) | Real-model answer quality (never tested against real Gemini/Groq) |
 | Composer | Multiline input, Enter/Shift+Enter, Stop, example prompts | - |
 | Documentation | Explorer over the indexed GTPS Cloud docs: hierarchy, FTS5 search, Markdown viewer, status | Content appears only after a sync has been run |
 | Lua Workspace | Monaco editor, file tabs, live preview, local persistence | Download, Lua generation |
@@ -366,8 +366,106 @@ are not in `package.json`).
   React components were not type-checked against `@types/react` (not installed
   here).
 - Several browser tabs open at once are not coordinated: the last write wins.
-- The assistant knows nothing about GTPS documentation yet (no RAG); its system
-  prompt tells it not to guess API names.
+- Documentation search was added in Step 7 (next section).
+
+## Documentation-aware answers (Step 7)
+
+The chat searches the indexed GTPS Cloud documentation **on the server** before each
+question and sends only the relevant sections to Gemini or Groq. The browser never
+receives the whole database, and cannot replace the system prompt.
+
+```
+question -> intent detection -> FTS5 search -> ranking and filtering -> token budget
+         -> prompt (rules + numbered excerpts) -> Gemini/Groq -> answer + sources
+```
+
+### Index (SQLite, schema version 4)
+
+| Table | Content |
+| --- | --- |
+| `doc_chunks` | one row per chunk: document, kind (`section`, `api`, `code`), heading, heading id (`anchor`), API name (`label`), text, token estimate |
+| `search_chunks` | FTS5 (`porter unicode61`) over heading, text and `idents` (camelCase names split into words), rowid = chunk id |
+
+Chunks are written by the same code path that saves a page (`indexDocument`), so every
+synchronization updates them. A database from before Step 7 is chunked once when it is opened.
+
+- Sections are cut at paragraph boundaries (about 2,200 characters, one paragraph of overlap),
+  never inside a code block; tiny sections are merged into the next one.
+- Every API entry is one chunk (signature, parameters, returns, description); every code
+  example is one chunk with its context line.
+
+### Retrieval and ranking (`src/server/rag/`)
+
+- **Intent** (`intent.ts`): rule-based, English and Indonesian. Finds API names (`Player:getName`,
+  `onPlayerChatCallback`, anything in backticks, calls in pasted code), drops stop words and words
+  like "parameters" that name a field rather than a topic, applies a small Indonesian-to-English
+  glossary, and skips greetings.
+- **Candidates**: FTS5 `bm25` over the words and identifier phrases, plus an exact lookup of API
+  names (case-insensitive, with or without the owner).
+- **Ranking**: weighted term coverage (rare words count more), bm25 rank, exact API-name match,
+  title match and fit between the question type and the chunk type. Weak matches are filtered out
+  by an absolute and a relative threshold.
+- **Selection**: at most 8 excerpts and 3 per page, near-duplicates and examples already inside a
+  selected section are dropped, and the text is cut to a budget (default 4,500 estimated tokens).
+- **Conflicts**: when two pages document the same API with different signatures, both are sent and
+  flagged so the model must report the disagreement.
+- **Name check**: every API name in the question or in a pasted script is looked up in the API
+  entries and the result ("documented" / "NOT FOUND") is given to the model.
+
+**Semantic (embedding) search is not implemented.** There is no embedding model available
+offline and none was added; matching is lexical (stemming, identifier splitting, glossary).
+
+### Prompt and prompt-injection defence
+
+The system prompt (`prompt.ts`) is written by the server: GTPS Cloud Lua specialist; prioritize the
+indexed documentation; never invent API methods; verify names and parameters; separate documented
+facts from assumptions; say when information is missing; cite URLs as `[n]`; preserve the behavior
+of scripts being modified; report conflicting pages. Excerpts go in the **user** turn between
+`<<<SOURCE-<random id>` and `<<<END-<random id>` markers (a new id per request) and are declared to
+be data. Scraped text is also neutralized: invisible characters are removed, look-alike markers are
+defused, and lines that read as instructions to an AI (English and Indonesian patterns) are removed
+and counted. This lowers the risk; it cannot guarantee how a real model behaves.
+
+When nothing relevant is found, or the index is empty or fails, the model is told so and must not
+state GTPS API details as fact; the chat keeps working.
+
+### What the chat shows
+
+- Under each answer: the numbered sources (page, section, kind, original URL, **Open** in the
+  documentation viewer at the section, excerpt) and which ones the answer actually cites.
+- In the chat header: **Documentation Search** (Active / Off / Unavailable / Unknown),
+  **Documents Retrieved** and **Sources Used** from the latest reply (`—` when nothing was searched,
+  never an invented number), and **Last Documentation Sync** from the database. The checkbox turns
+  documentation search off; the choice is remembered.
+
+`POST /api/ai/chat` accepts `docs: true` and answers with an extra `context` event right after
+`start`; `GET /api/docs/context` returns `{available, documents, chunks, lastSyncAt}`.
+
+### Tests
+
+```bash
+node --import tsx --no-warnings --test tests/rag-retrieval.test.ts tests/rag-chat.test.ts
+```
+
+- `rag-retrieval.test.ts` (33): chunking, index upkeep and migration, intent, retrieval of pages,
+  API names, parameters and code examples, citations, nothing found, conflicts, prompt injection,
+  token budget.
+- `rag-chat.test.ts` (17): the real chat client and handler with a SQLite documentation database in
+  front of fake Gemini/Groq servers; asserts what the providers **received**.
+- `tests/ui/sources-panel.test.tsx` (4) and the Chromium suite (`chat.browser.ts`, indicator,
+  sources, links, reload, toggle).
+
+### Verified and not verified
+
+- Verified: the excerpts, rules, URLs and removal of injected lines are in the requests that Gemini
+  and Groq adapters send (checked against local fake servers), and the UI shows sources and counts
+  that come from the backend's record of the search.
+- **The tests use a synthetic documentation set** (`tests/support/gtps-docs-fixture.ts`, 8 pages).
+  No synchronized GTPS Cloud database exists in this environment, so retrieval was **not** run on
+  the real documentation, and the ranking thresholds were tuned on this tiny set only. Run a sync,
+  then try real questions before trusting them.
+- Real Gemini/Groq were not contacted: whether a real model cites correctly or resists injected
+  text is untested. Groq free-tier token limits may need a smaller budget (`maxContextTokens`).
 
 ## Project structure
 
@@ -404,4 +502,5 @@ src/
 4. **Step 4:** documentation explorer (hierarchy, FTS5 search, viewer, status).
 5. **Step 5:** multi-provider AI integration (Gemini, Groq), settings, unified service.
 6. **Step 6:** AI chat (streaming, history in IndexedDB, model selector).
-7. Later steps: documentation-aware answers (RAG), Lua generation.
+7. **Step 7:** documentation-aware answers (retrieval, citations, context indicator).
+8. Later steps: Lua generation.

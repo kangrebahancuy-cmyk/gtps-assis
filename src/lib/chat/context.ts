@@ -8,6 +8,7 @@ export const SYSTEM_PROMPT =
   "Answer clearly and concisely and format replies with Markdown. Put code in fenced blocks labelled with the language (use ```lua for Lua). " +
   "You do not have access to the GTPS Cloud documentation in this conversation: if you are not sure an API function exists or how it behaves, say so instead of guessing.";
 
+// With documentation search on, the server writes the system prompt (buildContext is then called with null).
 // Mirror the backend limits (src/server/ai/validate.ts) with a safety margin.
 export const MAX_CONTEXT_MESSAGES = 99; // plus the system prompt = 100
 export const MAX_CONTEXT_MESSAGE_CHARS = 100_000;
@@ -21,7 +22,7 @@ const TRUNCATION_NOTE = "\n\n[…earlier part of this message was cut to fit the
  *  - oversized messages are shortened, and the oldest messages are dropped until the whole thing fits;
  *  - the history always starts with a user message.
  */
-export function buildContext(messages: readonly StoredMessage[], systemPrompt: string = SYSTEM_PROMPT): ChatMessage[] {
+export function buildContext(messages: readonly StoredMessage[], systemPrompt: string | null = SYSTEM_PROMPT): ChatMessage[] {
   const usable = messages.filter((m) => m.content.trim() !== "" && (m.status === "complete" || m.status === "stopped" || m.status === "interrupted" || m.role === "user"));
 
   const merged: ChatMessage[] = [];
@@ -37,13 +38,13 @@ export function buildContext(messages: readonly StoredMessage[], systemPrompt: s
     }
   }
 
-  let total = systemPrompt.length + merged.reduce((n, m) => n + m.content.length, 0);
+  let total = (systemPrompt?.length ?? 0) + merged.reduce((n, m) => n + m.content.length, 0);
   while (merged.length > 1 && (merged.length > MAX_CONTEXT_MESSAGES || total > MAX_CONTEXT_TOTAL_CHARS)) {
     total -= merged.shift()?.content.length ?? 0;
   }
   while (merged.length > 1 && merged[0]?.role !== "user") merged.shift();
 
-  return [{ role: "system", content: systemPrompt }, ...merged];
+  return systemPrompt === null ? merged : [{ role: "system", content: systemPrompt }, ...merged];
 }
 
 /** A short title from the first line of the first user message. */

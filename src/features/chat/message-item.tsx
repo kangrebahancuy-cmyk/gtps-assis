@@ -7,6 +7,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/features/chat/chat-provider";
 import { MarkdownRenderer } from "@/features/chat/markdown-renderer";
+import { SourcesPanel } from "@/features/chat/sources-panel";
 import { errorHint } from "@/lib/ai-format";
 import { copyText } from "@/lib/clipboard";
 import { PROVIDER_LABELS } from "@/lib/chat/models";
@@ -164,6 +165,8 @@ function AssistantBubble({ message, isLast, busy }: MessageItemProps) {
         {message.status === "interrupted" ? <p className="py-1 text-xs text-amber-600 dark:text-amber-400">This reply was interrupted: the page was closed before it finished.</p> : null}
         {message.meta.finishReason === "length" && message.status === "complete" ? <p className="py-1 text-xs text-muted-foreground">The reply was cut off because it reached the length limit.</p> : null}
         {message.status === "complete" && message.content === "" ? <p className="py-1 text-xs text-muted-foreground">The model returned an empty reply.</p> : null}
+
+        <SourcesPanel message={message} />
 
         {error ? (
           <div role="alert" className="my-2 flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">

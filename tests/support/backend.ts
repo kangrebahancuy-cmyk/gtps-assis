@@ -14,6 +14,8 @@ import { AiConfigStore } from "@/server/ai/config-store";
 import { createGeminiProvider } from "@/server/ai/providers/gemini";
 import { createGroqProvider } from "@/server/ai/providers/groq";
 import { AiService } from "@/server/ai/service";
+import type { Db } from "@/server/db/database";
+import { createRagPipeline } from "@/server/rag/pipeline";
 import type { FetchLike } from "@/services/ai-client";
 import { GEMINI_KEY, GROQ_KEY, startFakeGemini, startFakeGroq, type Fake } from "../ai-fakes";
 
@@ -34,7 +36,14 @@ export interface Backend {
   close(): Promise<void>;
 }
 
-export async function startBackend(): Promise<Backend> {
+export interface BackendOptions {
+  /** A documentation database: enables the documentation search (Step 7) in /api/ai/chat and /api/docs/context. */
+  docsDb?: Db;
+}
+
+export async function startBackend(options: BackendOptions = {}): Promise<Backend> {
+  const docsDb = options.docsDb;
+  const rag = docsDb ? createRagPipeline(() => docsDb) : undefined;
   const [gemini, groq] = await Promise.all([startFakeGemini(), startFakeGroq()]);
   const dir = mkdtempSync(join(tmpdir(), "gtps-backend-"));
   let now = Date.now();
@@ -55,7 +64,8 @@ export async function startBackend(): Promise<Backend> {
       case "/api/ai/config": return request.method === "DELETE" ? handleRemoveConfig(service)(request) : handleSaveConfig(service)(request);
       case "/api/ai/models": return handleModels(service)(request);
       case "/api/ai/test": return handleTest(service)(request);
-      case "/api/ai/chat": return handleChat(service)(request);
+      case "/api/ai/chat": return handleChat(service, rag)(request);
+      case "/api/docs/context": return rag ? Response.json(rag.status()) : new Response("{}", { status: 404 });
       default: return new Response("{}", { status: 404 });
     }
   };
@@ -81,7 +91,7 @@ export async function startBackend(): Promise<Backend> {
     },
     fetch: inProcess,
     async http(req, res) {
-      if (!req.url?.startsWith("/api/ai/")) return false;
+      if (!req.url?.startsWith("/api/ai/") && !req.url?.startsWith("/api/docs/context")) return false;
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const hasBody = !["GET", "HEAD", "DELETE"].includes(req.method ?? "GET");
@@ -129,4 +139,11 @@ export async function startBackend(): Promise<Backend> {
 export const lastGroqMessages = (groq: Fake): Array<{ role: string; content: string }> => {
   const calls = groq.requests.filter((r) => r.url === "/chat/completions");
   return JSON.parse(calls.at(-1)!.body).messages;
+};
+
+/** The system instruction and contents the fake Gemini received in its last chat request. */
+export const lastGeminiRequest = (gemini: Fake): { system: string; contents: Array<{ role: string; text: string }> } => {
+  const calls = gemini.requests.filter((r) => r.url.includes(":streamGenerateContent"));
+  const body = JSON.parse(calls.at(-1)!.body) as { systemInstruction?: { parts: Array<{ text: string }> }; contents: Array<{ role: string; parts: Array<{ text: string }> }> };
+  return { system: body.systemInstruction?.parts.map((p) => p.text).join("") ?? "", contents: body.contents.map((c) => ({ role: c.role, text: c.parts.map((p) => p.text).join("") })) };
 };

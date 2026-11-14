@@ -3,6 +3,8 @@
  * responses expose only whether a key is configured and its last characters.
  */
 
+import type { RetrievalInfo } from "@/types/rag";
+
 export const PROVIDER_IDS = ["gemini", "groq"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -149,8 +151,14 @@ export interface ChatMessage {
   content: string;
 }
 
-/** Provider and model are optional: the saved defaults apply when omitted. */
+/**
+ * Provider and model are optional: the saved defaults apply when omitted.
+ * With `docs: true` the backend searches the indexed documentation, builds the
+ * system prompt itself and answers with the retrieved sections (any system
+ * message sent by the browser is ignored).
+ */
 export interface ChatRequest {
+  docs?: boolean;
   provider?: ProviderId;
   model?: string;
   messages: ChatMessage[];
@@ -162,6 +170,8 @@ export type FinishReason = "stop" | "length" | "blocked" | "other";
 
 export type ChatStreamEvent =
   | { type: "start"; provider: ProviderId; model: string }
+  /** What the documentation search found for this question (only with `docs: true`); comes right after `start`. */
+  | { type: "context"; context: RetrievalInfo }
   | { type: "delta"; text: string }
   | { type: "usage"; inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
   | { type: "done"; finishReason: FinishReason }

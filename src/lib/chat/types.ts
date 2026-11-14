@@ -1,4 +1,5 @@
 import type { AiErrorKind, FinishReason, ProviderId } from "@/types/ai";
+import type { RetrievalInfo } from "@/types/rag";
 
 /** Data model of the chat history. Everything here is stored locally in the browser (IndexedDB). */
 
@@ -25,6 +26,8 @@ export interface MessageMeta {
   error?: MessageError;
   /** The user edited this message after sending it. */
   edited?: boolean;
+  /** What the documentation search found for this reply (sources, counts). Absent when documentation search was off. */
+  docs?: RetrievalInfo;
 }
 
 export interface StoredMessage {

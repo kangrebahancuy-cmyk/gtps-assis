@@ -1,4 +1,5 @@
 import { request } from "@/services/sync-client";
+import type { DocsContextStatus } from "@/types/rag";
 import type {
   ApiIndexEntry,
   DocTree,
@@ -19,4 +20,6 @@ export const docsClient = {
   luaExamples: async () =>
     (await request<{ examples: ExampleIndexEntry[] }>("/api/docs/examples?language=lua")).examples,
   status: () => request<DocsStatus>("/api/docs/status"),
+  /** Whether the chat can search the documentation, and how much is indexed. */
+  context: (signal?: AbortSignal) => request<DocsContextStatus>("/api/docs/context", { signal }),
 };

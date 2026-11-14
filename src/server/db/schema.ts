@@ -1,5 +1,5 @@
 /** SQLite schema. Applied idempotently on every database open. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * crawl_urls is defined separately because the v1 -> v2 migration has to
@@ -134,5 +134,24 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_api USING fts5(
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS search_code USING fts5(
   code, context, tokenize = 'trigram'
+);
+
+-- Retrieval chunks for the AI (Step 7): see src/server/rag/chunker.ts. search_chunks rowid = doc_chunks.id.
+CREATE TABLE IF NOT EXISTS doc_chunks (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  position     INTEGER NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('section','api','code')),
+  heading      TEXT,
+  anchor       TEXT,
+  label        TEXT,
+  language     TEXT,
+  text         TEXT NOT NULL,
+  tokens       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_document ON doc_chunks(document_id, position);
+CREATE INDEX IF NOT EXISTS idx_chunks_label ON doc_chunks(label COLLATE NOCASE);
+CREATE VIRTUAL TABLE IF NOT EXISTS search_chunks USING fts5(
+  heading, text, idents, tokenize = 'porter unicode61'
 );
 `;

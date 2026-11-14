@@ -1,6 +1,7 @@
 import type { Db } from "@/server/db/database";
 import { markdownToPlainText } from "@/lib/markdown-plain";
 import { classifyApiEntry } from "@/server/docs/classify";
+import { indexChunks } from "@/server/rag/chunk-index";
 
 /**
  * Maintains the three FTS5 indexes. Rows are keyed by the rowid of their source
@@ -42,11 +43,12 @@ export function indexDocument(db: Db, documentId: number): void {
     `INSERT INTO search_code (rowid, code, context)
      SELECT id, code, COALESCE(context, '') FROM code_examples WHERE document_id = ?`,
   ).run(documentId);
+  indexChunks(db, documentId);
 }
 
 /** Rebuilds every index from scratch. Used by migrations and as a repair tool. */
 export function rebuildSearchIndex(db: Db): number {
-  db.exec("DELETE FROM search_documents; DELETE FROM search_api; DELETE FROM search_code;");
+  db.exec("DELETE FROM search_documents; DELETE FROM search_api; DELETE FROM search_code; DELETE FROM search_chunks; DELETE FROM doc_chunks;");
   const ids = db.prepare("SELECT id FROM documents").all() as { id: number }[];
   for (const { id } of ids) indexDocument(db, id);
   return ids.length;

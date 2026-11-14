@@ -16,6 +16,7 @@ export const MAX_INPUT_CHARS = 100_000;
 const MAX_TITLE_CHARS = 120;
 const META_ACTIVE = "activeId";
 const META_TARGET = "lastTarget";
+const META_DOCS = "docsSearch";
 const META_MODEL = (provider: ProviderId) => `lastModel:${provider}`;
 
 export interface ModelChoices {
@@ -47,6 +48,8 @@ export interface ChatState {
   notice: Notice | null;
   /** Unsent text of the composer (not stored). */
   draftText: string;
+  /** Search the indexed documentation before answering (remembered across reloads). */
+  docsSearch: boolean;
   search: { query: string; hits: SearchHit[] | null; pending: boolean };
 }
 
@@ -63,6 +66,7 @@ export const LOADING_STATE: ChatState = {
   models: { status: "idle", error: null, providers: [], catalogs: [], defaults: { provider: null, model: null } },
   notice: null,
   draftText: "",
+  docsSearch: true,
   search: { query: "", hits: null, pending: false },
 };
 
@@ -117,6 +121,7 @@ export class ChatController {
       models: { status: "idle", error: null, providers: [], catalogs: [], defaults: { provider: null, model: null } },
       notice: null,
       draftText: "",
+      docsSearch: true,
       search: { query: "", hits: null, pending: false },
     };
   }
@@ -149,6 +154,7 @@ export class ChatController {
     try {
       const conversations = await this.repo.listConversations();
       const activeId = await this.repo.getMeta(META_ACTIVE);
+      if ((await this.repo.getMeta(META_DOCS)) === "off") this.set({ docsSearch: false });
       this.set({ conversations });
       const open = conversations.find((c) => c.id === activeId);
       if (open) await this.open(open);
@@ -340,6 +346,12 @@ export class ChatController {
     this.set({ draftText: text });
   }
 
+  /** Turns documentation search on or off for the next questions. */
+  setDocsSearch(on: boolean): void {
+    this.set({ docsSearch: on });
+    this.persistMeta(META_DOCS, on ? "on" : "off");
+  }
+
   dismissNotice(): void {
     this.set({ notice: null });
   }
@@ -491,7 +503,10 @@ export class ChatController {
 
     const finish = (patch: Partial<StoredMessage>) => this.patch(conversationId, messageId, patch);
     try {
-      for await (const event of this.ai.streamChat({ provider: conversation.provider, model: conversation.model, messages: buildContext(history) }, gen.abort.signal)) {
+      // With documentation search on, the backend searches the index and writes the system prompt itself.
+      const docs = this.state.docsSearch;
+      const request = { provider: conversation.provider, model: conversation.model, messages: buildContext(history, docs ? null : undefined), ...(docs ? { docs: true } : {}) };
+      for await (const event of this.ai.streamChat(request, gen.abort.signal)) {
         this.apply(conversationId, messageId, event, gen);
       }
     } catch (error) {
@@ -519,6 +534,9 @@ export class ChatController {
     switch (event.type) {
       case "start":
         this.patch(conversationId, messageId, { provider: event.provider, model: event.model });
+        break;
+      case "context":
+        this.patch(conversationId, messageId, { meta: { ...message.meta, docs: event.context } });
         break;
       case "delta":
         this.patch(conversationId, messageId, { content: message.content + event.text });

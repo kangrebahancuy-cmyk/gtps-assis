@@ -1,4 +1,5 @@
 import { isProviderId } from "@/types/ai";
+import type { Citation, RetrievalInfo } from "@/types/rag";
 import { EXPORT_FORMAT, EXPORT_VERSION, type ChatSnapshot, type ExportedConversation, type ExportFile, type MessageMeta, type MessageStatus, type StoredMessage } from "@/lib/chat/types";
 
 /** Export and import of the chat history as one JSON file. Contains no API keys: they are never stored in the browser. */
@@ -49,7 +50,49 @@ const idOf = (v: unknown, what: string): string => {
   if (id === "") throw new ImportError(`${what} is empty.`);
   return id;
 };
+const RETRIEVAL_STATUSES: readonly string[] = ["used", "none_found", "skipped", "unavailable", "error"];
+const SOURCE_KINDS: readonly string[] = ["section", "api", "code"];
+const INTENTS: readonly string[] = ["smalltalk", "api_lookup", "code_example", "modify_script", "how_to", "general"];
 const STATUSES: readonly string[] = ["complete", "streaming", "stopped", "error", "interrupted"];
+
+const text = (x: unknown, max: number): string | null => (typeof x === "string" ? x.slice(0, max) : null);
+const count = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+
+/** Keeps the documentation search record of a reply only when it has the expected shape. */
+function parseRetrieval(value: unknown): RetrievalInfo | null {
+  if (!isObject(value) || !RETRIEVAL_STATUSES.includes(String(value.status))) return null;
+  const citations: Citation[] = [];
+  for (const c of Array.isArray(value.citations) ? value.citations.slice(0, 40) : []) {
+    if (!isObject(c)) continue;
+    const title = text(c.title, 300);
+    const url = text(c.url, 1000);
+    if (title === null || url === null || !SOURCE_KINDS.includes(String(c.kind))) continue;
+    citations.push({
+      n: count(c.n), documentId: count(c.documentId), title, section: text(c.section, 300), anchor: text(c.anchor, 200), url,
+      kind: c.kind as Citation["kind"], excerpt: text(c.excerpt, 600) ?? "", truncated: c.truncated === true,
+    });
+  }
+  const index = isObject(value.index) ? value.index : {};
+  return {
+    status: value.status as RetrievalInfo["status"],
+    reason: text(value.reason, 500),
+    intent: (INTENTS.includes(String(value.intent)) ? value.intent : "general") as RetrievalInfo["intent"],
+    terms: Array.isArray(value.terms) ? value.terms.filter((t): t is string => typeof t === "string").slice(0, 20).map((t) => t.slice(0, 60)) : [],
+    candidates: count(value.candidates),
+    documentsRetrieved: count(value.documentsRetrieved),
+    sectionsSent: count(value.sectionsSent),
+    tokensEstimate: count(value.tokensEstimate),
+    removedInstructionLines: count(value.removedInstructionLines),
+    citations,
+    identifiers: Array.isArray(value.identifiers)
+      ? value.identifiers.filter(isObject).slice(0, 30).map((i) => ({ name: text(i.name, 100) ?? "", documented: i.documented === true, sources: Array.isArray(i.sources) ? i.sources.map(count).slice(0, 20) : [] }))
+      : [],
+    conflicts: Array.isArray(value.conflicts)
+      ? value.conflicts.filter(isObject).slice(0, 20).map((c) => ({ name: text(c.name, 100) ?? "", sources: Array.isArray(c.sources) ? c.sources.map(count).slice(0, 20) : [], note: text(c.note, 300) ?? "" }))
+      : [],
+    index: { documents: count(index.documents), chunks: count(index.chunks), lastSyncAt: text(index.lastSyncAt, 40) },
+  };
+}
 
 function parseMeta(value: unknown): MessageMeta {
   if (!isObject(value)) return {};
@@ -67,6 +110,8 @@ function parseMeta(value: unknown): MessageMeta {
     };
   }
   if (value.edited === true) meta.edited = true;
+  const docs = parseRetrieval(value.docs);
+  if (docs) meta.docs = docs;
   return meta;
 }
 

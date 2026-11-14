@@ -13,10 +13,13 @@ import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import type { Browser, BrowserContext, Page } from "playwright";
 
 import { groqEvents } from "../ai-fakes";
-import { startBackend, type Backend } from "../support/backend";
+import { startBackend, lastGroqMessages, type Backend } from "../support/backend";
+import { SYSTEM_PROMPT } from "../../src/lib/chat/context";
+import { BASE, seededDb } from "../support/gtps-docs-fixture";
 import { bundle, chromium, ROOT, serve, type TestSite } from "./support/browser";
 
 let be: Backend;
+const docs = seededDb();
 let site: TestSite;
 let browser: Browser;
 let context: BrowserContext;
@@ -24,7 +27,7 @@ let page: Page;
 const errors: string[] = [];
 
 before(async () => {
-  be = await startBackend();
+  be = await startBackend({ docsDb: docs.db });
   site = await serve(await bundle(join(ROOT, "tests/browser/entries/chat-app.tsx")), [(req, res) => be.http(req, res)], '<div id="root"></div>', readFileSync(join(ROOT, "tests/browser/support/layout.css"), "utf8"));
   browser = await chromium.launch();
 });
@@ -631,5 +634,171 @@ describe("generating in the background", () => {
     await page.getByRole("button", { name: /background chat/ }).first().click();
     await page.getByText("slow reply text").waitFor();
     await finished();
+  });
+});
+
+describe("documentation sources and the context indicator", () => {
+  const indicator = async () => ({
+    search: await page.getByTestId("ctx-search").innerText(),
+    retrieved: await page.getByTestId("ctx-retrieved").innerText(),
+    used: await page.getByTestId("ctx-used").innerText(),
+    sync: await page.getByTestId("ctx-sync").innerText(),
+  });
+  const searchIs = (value: string) => page.waitForFunction((v) => document.querySelector('[data-testid="ctx-search"]')?.textContent === v, value);
+
+  it("before any question: search is active, nothing is retrieved yet, and no synchronization is invented", async () => {
+    await configured();
+    await searchIs("Active");
+    assert.deepEqual(await indicator(), { search: "Active", retrieved: "—", used: "—", sync: "Never synchronized" });
+  });
+
+  it("shows the real last synchronization time from the database", async () => {
+    const iso = "2026-11-01T08:00:00.000Z";
+    docs.db.prepare("INSERT INTO sync_metadata (key, value, updated_at) VALUES ('sync.last_success_at', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(iso, iso);
+    try {
+      await configured();
+      const expected = await page.evaluate((v) => new Date(v).toLocaleString(), iso);
+      await page.waitForFunction((e) => document.querySelector('[data-testid="ctx-sync"]')?.textContent === e, expected);
+    } finally {
+      docs.db.prepare("DELETE FROM sync_metadata WHERE key = 'sync.last_success_at'").run();
+    }
+  });
+
+  it("an answer shows its sources, and the indicator counts match the sources listed", async () => {
+    await configured();
+    be.groq.setReply(["It returns a string [1]."]);
+    await send("What does Player:getName return?");
+    await finished();
+    await page.getByTestId("sources").waitFor();
+
+    const items = page.getByTestId("source-item");
+    const count = await items.count();
+    assert.ok(count >= 1);
+    const first = items.first();
+    assert.match(await first.innerText(), /\[1\]\s*Player › Player:getName/);
+    assert.match(await first.innerText(), /cited/);
+    assert.match(await page.getByTestId("sources-summary").innerText(), new RegExp(`${count} section`));
+
+    // counts in the header are the real ones
+    const pages = await page.evaluate(() => new Set([...document.querySelectorAll('[data-testid="source-item"] a[href^="/docs?doc="]')].map((a) => new URL((a as HTMLAnchorElement).href).searchParams.get("doc"))).size);
+    assert.deepEqual(await indicator(), { search: "Active", retrieved: String(pages), used: "1", sync: "Never synchronized" });
+
+    // the excerpt is what was really sent
+    await first.locator("summary").click();
+    assert.match(await first.innerText(), /Signature: Player:getName\(\)/);
+    assert.match(lastGroqMessages(be.groq)[1]!.content, /Signature: Player:getName\(\)/);
+  });
+
+  it("a citation opens the cited page in the documentation viewer, and the original URL in a new tab", async () => {
+    await configured();
+    be.groq.setReply(["See [1]."]);
+    await send("What does Player:getName return?");
+    await finished();
+    const link = page.getByTestId("source-item").first().locator('a[href^="/docs?doc="]');
+    const id = (docs.db.prepare("SELECT id FROM documents WHERE url = ?").get(`${BASE}/player`) as { id: number }).id;
+    assert.equal(await link.getAttribute("href"), `/docs?doc=${id}`);
+    const original = page.getByTestId("source-item").first().locator(`a[href="${BASE}/player"]`);
+    assert.equal(await original.getAttribute("target"), "_blank");
+    assert.equal(await original.getAttribute("rel"), "noopener noreferrer");
+
+    be.groq.setReply(["Use this [1]."]);
+    await send("how do I stop a chat message from being sent to other players");
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="sources"]').length === 2);
+    await finished();
+    const section = page.getByTestId("source-item").locator('a[href$="#chat"]');
+    assert.equal(await section.count() >= 1, true, "section citations point at the heading");
+  });
+
+  it("says clearly when nothing relevant was found, with zero counts", async () => {
+    await configured();
+    be.groq.setReply(["I could not find that in the documentation."]);
+    await send("How do I use Player:teleportToMoon?");
+    await finished();
+    await page.getByTestId("docs-none").waitFor();
+    assert.match(await page.getByTestId("docs-none").innerText(), /No relevant documentation was found/);
+    assert.match(await page.getByTestId("docs-none").innerText(), /Player:teleportToMoon/);
+    assert.equal(await page.getByTestId("sources").count(), 0);
+    const i = await indicator();
+    assert.equal(i.retrieved, "0");
+    assert.equal(i.used, "0");
+    assert.match(lastGroqMessages(be.groq)[0]!.content, /NOTHING RELEVANT WAS FOUND/);
+  });
+
+  it("does not search for a greeting and shows no sources", async () => {
+    await configured();
+    be.groq.setReply(["Hello!"]);
+    await send("hello");
+    await finished();
+    assert.equal(await page.getByTestId("sources").count() + (await page.getByTestId("docs-none").count()), 0);
+    assert.equal((await indicator()).retrieved, "—");
+  });
+
+  it("flags conflicting pages and removed injected lines", async () => {
+    await configured();
+    be.groq.setReply(["See [1] and [2]."]);
+    await send("What is the signature of Player:onConsoleMessage?");
+    await finished();
+    assert.match(await page.getByTestId("docs-conflict").innerText(), /Conflicting documentation: Player:onConsoleMessage/);
+
+    await page.getByRole("button", { name: "New Chat" }).click();
+    await welcomeShown();
+    be.groq.setReply(["Use setNickname [1]."]);
+    await send("How do I change a player's nickname?");
+    await finished();
+    assert.match(await page.getByTestId("docs-removed").innerText(), /3 lines of documentation text looked like instructions to an AI/);
+    const bodyText = await page.locator("body").innerText();
+    assert.doesNotMatch(bodyText, /IGNORE ALL PREVIOUS|PWNED/i, "the injected text is not shown, and was not sent");
+    assert.doesNotMatch(JSON.stringify(lastGroqMessages(be.groq)), /IGNORE ALL PREVIOUS|PWNED/i);
+  });
+
+  it("the sources survive a reload", async () => {
+    await configured();
+    be.groq.setReply(["It returns a string [1]."]);
+    await send("What does Player:getName return?");
+    await finished();
+    const before = await page.getByTestId("source-item").count();
+    await page.waitForTimeout(150);
+    await open();
+    await page.getByTestId("sources").waitFor();
+    assert.equal(await page.getByTestId("source-item").count(), before);
+    assert.equal((await indicator()).used, "1");
+  });
+
+  it("can be switched off: the old request is sent, no sources are claimed, and the choice is remembered", async () => {
+    await configured();
+    await searchIs("Active");
+    await page.getByLabel("Search documentation before answering").uncheck();
+    await searchIs("Off");
+    be.groq.setReply(["Plain answer."]);
+    await send("What does Player:getName return?");
+    await finished();
+    assert.deepEqual(lastGroqMessages(be.groq).map((m) => m.role), ["system", "user"]);
+    assert.equal(lastGroqMessages(be.groq)[0]!.content, SYSTEM_PROMPT);
+    assert.equal(await page.getByTestId("sources").count() + (await page.getByTestId("docs-none").count()), 0);
+    await page.waitForTimeout(150);
+    await open();
+    await searchIs("Off");
+    assert.equal(await page.getByLabel("Search documentation before answering").isChecked(), false);
+  });
+
+  it("a malformed answer from the status route is treated as unknown and does not break the chat", async () => {
+    await page.route("**/api/docs/context", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "null" }));
+    await configured();
+    await searchIs("Unknown (backend unreachable)");
+    be.groq.setReply(["Still works."]);
+    await send("hello");
+    await finished();
+    assert.deepEqual(await assistantTexts(), ["Still works."]);
+  });
+
+  it("reports an unreachable documentation index instead of a count", async () => {
+    await configured();
+    await searchIs("Active");
+    await page.route("**/api/docs/context", (route) => route.abort());
+    await page.getByRole("button", { name: "New Chat" }).click();
+    await page.evaluate(() => undefined);
+    await open();
+    await searchIs("Unknown (backend unreachable)");
+    assert.equal((await indicator()).sync, "—");
   });
 });

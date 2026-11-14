@@ -1,6 +1,7 @@
 "use client";
 
 import { useChat } from "@/features/chat/chat-provider";
+import { ContextIndicator } from "@/features/chat/context-indicator";
 import { ModelSelector } from "@/features/chat/model-selector";
 import { PROVIDER_LABELS } from "@/lib/chat/models";
 
@@ -16,6 +17,7 @@ export function ChatHeader() {
         </h1>
         <ModelSelector />
       </div>
+      <ContextIndicator />
       {problems.map((c) => (
         <p key={c.provider} role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">
           {PROVIDER_LABELS[c.provider]}: {c.error?.message}

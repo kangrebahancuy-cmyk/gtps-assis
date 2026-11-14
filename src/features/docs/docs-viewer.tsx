@@ -140,6 +140,18 @@ export function DocsViewer({ documentId, urlToId, onNavigate }: DocsViewerProps)
     };
   }, [documentId]);
 
+  // A link from a chat citation can point at a section (…/docs?doc=3#chat): scroll to it once the page is shown.
+  useEffect(() => {
+    if (state.phase !== "ready") return;
+    let id = window.location.hash.replace(/^#/, "");
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      return;
+    }
+    if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
+  }, [state]);
+
   if (state.phase === "idle") {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
