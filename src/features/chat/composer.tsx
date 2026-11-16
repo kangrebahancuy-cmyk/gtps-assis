@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useChat } from "@/features/chat/chat-provider";
 import { COMPOSER_ID } from "@/features/chat/welcome-screen";
 import { MAX_INPUT_CHARS } from "@/lib/chat/controller";
+import { modeOf } from "@/lib/chat/mode";
 import { configuredProviders } from "@/lib/chat/models";
 
 const MAX_HEIGHT_PX = 220;
@@ -72,7 +73,7 @@ export function Composer() {
               }
             }}
             rows={1}
-            placeholder="Message GTPS Assistant"
+            placeholder={modeOf(active) === "generate" ? "Describe the script you want, or paste one to modify" : "Message GTPS Assistant"}
             aria-label="Message"
             aria-describedby={hintId}
             className="max-h-56 min-h-[44px] flex-1 resize-none bg-transparent px-2 py-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"

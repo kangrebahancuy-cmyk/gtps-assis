@@ -9,7 +9,7 @@ export interface NavItem {
   excludePrefixes?: readonly string[];
 }
 
-export type NavIconName = "book" | "code" | "cpu" | "settings";
+export type NavIconName = "book" | "code" | "cpu" | "settings" | "wand";
 
 export interface LuaFile {
   id: string;

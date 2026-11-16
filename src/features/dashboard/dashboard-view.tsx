@@ -32,11 +32,11 @@ export function DashboardView() {
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <FeatureCard
-            href="/chat"
+            href="/generator"
             icon={Sparkles}
             title="AI Lua Script Generator"
-            description="Describe what you need and get GTPS-ready Lua."
-            status="Chat available"
+            description="Describe what you need; scripts are checked against the documentation."
+            status="Available"
           />
           <FeatureCard
             href="/docs"

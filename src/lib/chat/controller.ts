@@ -1,3 +1,4 @@
+import { modeOf, type ChatMode } from "@/lib/chat/mode";
 import { buildContext, deriveTitle } from "@/lib/chat/context";
 import { buildExport, ImportError, parseImport } from "@/lib/chat/export";
 import { newId } from "@/lib/chat/ids";
@@ -210,20 +211,34 @@ export class ChatController {
 
   // ---- conversations -----------------------------------------------------------
 
-  private blankConversation(target: { provider: ProviderId | null; model: string | null } | null): Conversation {
+  private blankConversation(target: { provider: ProviderId | null; model: string | null } | null, mode: ChatMode = "chat"): Conversation {
     const at = this.now?.() ?? Date.now();
-    return { id: newId("chat"), title: "New chat", titleSource: "auto", createdAt: at, updatedAt: at, provider: target?.provider ?? null, model: target?.model ?? null, messageCount: 0, metadata: {} };
+    return { id: newId("chat"), title: mode === "generate" ? "New script" : "New chat", titleSource: "auto", createdAt: at, updatedAt: at, provider: target?.provider ?? null, model: target?.model ?? null, messageCount: 0, metadata: mode === "generate" ? { mode: "generate" } : {} };
   }
 
-  /** Opens a new empty chat (or keeps the current one if it is still empty). */
-  async newChat(): Promise<void> {
+  /** Opens a new empty chat of the given mode (or keeps the current one if it is still empty). */
+  async newChat(mode: ChatMode = "chat"): Promise<void> {
     if (this.state.isDraft) {
-      this.set({ notice: null });
+      // An empty draft simply takes the requested mode.
+      if (modeOf(this.state.active) !== mode) this.set({ active: this.blankConversation(this.state.active.provider ? { provider: this.state.active.provider, model: this.state.active.model } : null, mode), notice: null });
+      else this.set({ notice: null });
       return;
     }
     const target = await this.chooseTarget();
-    this.set({ active: this.blankConversation(target), isDraft: true, messages: [], notice: null });
+    this.set({ active: this.blankConversation(target, mode), isDraft: true, messages: [], notice: null });
     this.persistMeta(META_ACTIVE, null);
+  }
+
+  /**
+   * Makes sure the open conversation is of this mode: the latest conversation of that mode is opened,
+   * or an empty one is started. Used when a page (Chat, Script Generator) is opened.
+   */
+  async ensureMode(mode: ChatMode): Promise<void> {
+    await this.init();
+    if (modeOf(this.state.active) === mode) return;
+    const latest = this.state.conversations.find((c) => modeOf(c) === mode);
+    if (latest) await this.open(latest);
+    else await this.newChat(mode);
   }
 
   async select(id: string): Promise<void> {
@@ -361,7 +376,7 @@ export class ChatController {
   }
 
   /** Sends a message and resolves when the reply has finished (or failed). Returns false if nothing was sent. */
-  async send(text: string): Promise<boolean> {
+  async send(text: string, options: { mode?: ChatMode } = {}): Promise<boolean> {
     const content = text.trim();
     const guard = this.cannotSend(content);
     if (guard) {
@@ -371,6 +386,8 @@ export class ChatController {
     const base = this.state.active;
     const at = this.now();
     const user = this.makeMessage(base.id, this.state.messages.length, "user", content, "complete");
+    // Only a request that differs from the conversation's mode is remembered on the message (so regenerating repeats it).
+    if (options.mode && options.mode !== modeOf(base)) user.meta = { ...user.meta, requestMode: options.mode };
     const assistant = this.makeMessage(base.id, user.order + 1, "assistant", "", "streaming", { provider: base.provider, model: base.model });
     const conversation: Conversation = {
       ...base,
@@ -504,8 +521,17 @@ export class ChatController {
     const finish = (patch: Partial<StoredMessage>) => this.patch(conversationId, messageId, patch);
     try {
       // With documentation search on, the backend searches the index and writes the system prompt itself.
-      const docs = this.state.docsSearch;
-      const request = { provider: conversation.provider, model: conversation.model, messages: buildContext(history, docs ? null : undefined), ...(docs ? { docs: true } : {}) };
+      // The message that is answered decides the mode: a script action may differ from the conversation's mode.
+      const asked = [...history].reverse().find((m) => m.role === "user");
+      const generating = (asked?.meta.requestMode ?? modeOf(conversation)) === "generate";
+      // The generator always searches the documentation; plain chat follows the switch.
+      const docs = generating || this.state.docsSearch;
+      const request = {
+        provider: conversation.provider,
+        model: conversation.model,
+        messages: buildContext(history, docs ? null : undefined),
+        ...(generating ? { mode: "generate" as const } : docs ? { docs: true } : {}),
+      };
       for await (const event of this.ai.streamChat(request, gen.abort.signal)) {
         this.apply(conversationId, messageId, event, gen);
       }
@@ -537,6 +563,9 @@ export class ChatController {
         break;
       case "context":
         this.patch(conversationId, messageId, { meta: { ...message.meta, docs: event.context } });
+        break;
+      case "script_check":
+        this.patch(conversationId, messageId, { meta: { ...message.meta, check: event.check } });
         break;
       case "delta":
         this.patch(conversationId, messageId, { content: message.content + event.text });

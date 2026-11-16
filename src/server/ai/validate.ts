@@ -66,6 +66,16 @@ export function validateChatRequest(body: unknown): ChatRequest {
       if (request.messages[request.messages.length - 1]?.role !== "user") throw invalid("With docs enabled, the last message must be from the user.");
     }
   }
+  if (body.mode !== undefined) {
+    if (body.mode !== "chat" && body.mode !== "generate") throw invalid('mode must be "chat" or "generate".');
+    if (body.mode === "generate") {
+      // The generator always searches the documentation and writes its own system prompt.
+      request.mode = "generate";
+      request.docs = true;
+      request.messages = messages.filter((m) => m.role !== "system");
+      if (request.messages[request.messages.length - 1]?.role !== "user") throw invalid("In generate mode, the last message must be from the user.");
+    }
+  }
   if (body.provider !== undefined) request.provider = validateProvider(body.provider);
   if (body.model !== undefined) request.model = validateModelId(body.model);
   if (body.temperature !== undefined) {

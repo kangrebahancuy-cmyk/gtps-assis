@@ -4,7 +4,8 @@ import { MessageSquareText } from "lucide-react";
 import Link from "next/link";
 
 import { useChat } from "@/features/chat/chat-provider";
-import { EXAMPLE_PROMPTS } from "@/lib/constants";
+import { EXAMPLE_PROMPTS, GENERATOR_PROMPTS } from "@/lib/constants";
+import { modeOf } from "@/lib/chat/mode";
 import { configuredProviders } from "@/lib/chat/models";
 
 export const COMPOSER_ID = "composer-input";
@@ -14,14 +15,20 @@ export function WelcomeScreen() {
   const { state, chat } = useChat();
   const connected = configuredProviders(state.models.providers).length > 0;
   const loadingModels = state.models.status === "idle" || state.models.status === "loading";
+  const generator = modeOf(state.active) === "generate";
+  const prompts = generator ? GENERATOR_PROMPTS : EXAMPLE_PROMPTS.map((prompt) => ({ label: prompt, prompt }));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8 text-center">
       <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-secondary">
         <MessageSquareText className="size-5 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h2 className="text-xl font-semibold tracking-tight">What are you building today?</h2>
-      <p className="mt-1 max-w-md text-sm text-muted-foreground">Ask about GTPS Lua scripting, or pick an example to start.</p>
+      <h2 className="text-xl font-semibold tracking-tight">{generator ? "What should the script do?" : "What are you building today?"}</h2>
+      <p className="mt-1 max-w-md text-sm text-muted-foreground">
+        {generator
+          ? "Describe the feature in your own words. The documentation is searched first, and the finished script is checked against it."
+          : "Ask about GTPS Lua scripting, or pick an example to start."}
+      </p>
 
       {!connected && !loadingModels ? (
         <p className="mt-4 max-w-md rounded-md border border-border bg-card px-3 py-2 text-sm" role="status">
@@ -34,8 +41,8 @@ export function WelcomeScreen() {
       ) : null}
 
       <ul className="mt-6 grid w-full max-w-2xl gap-2 sm:grid-cols-2">
-        {EXAMPLE_PROMPTS.map((prompt) => (
-          <li key={prompt}>
+        {prompts.map(({ label, prompt }) => (
+          <li key={label}>
             <button
               type="button"
               onClick={() => {
@@ -43,13 +50,18 @@ export function WelcomeScreen() {
                 document.getElementById(COMPOSER_ID)?.focus();
               }}
               className="w-full rounded-lg border border-border bg-card px-4 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
+              title={generator ? prompt : undefined}
             >
-              {prompt}
+              {label}
             </button>
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-muted-foreground">The assistant doesn&apos;t have the GTPS Cloud documentation yet, so check API details it gives you.</p>
+      <p className="mt-3 max-w-md text-xs text-muted-foreground">
+        {generator
+          ? "Every script is checked for syntax, documented function names, parameters and event names. What the documentation does not cover is reported, not guessed."
+          : "Answers use the indexed GTPS Cloud documentation when it is available; the sources are listed under each answer."}
+      </p>
     </div>
   );
 }

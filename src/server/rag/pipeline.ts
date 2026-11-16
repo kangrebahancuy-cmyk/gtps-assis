@@ -2,7 +2,10 @@ import type { Db } from "@/server/db/database";
 import { buildPrompt } from "@/server/rag/prompt";
 import { indexState, retrieve, type RetrieveOptions, type Retrieval } from "@/server/rag/retrieve";
 import { detectIntent } from "@/server/rag/intent";
+import { prepareGeneration } from "@/server/lua/generate";
+import { verifyScript } from "@/server/lua/verify";
 import type { ChatRequest } from "@/types/ai";
+import type { ScriptCheck } from "@/types/lua";
 import type { DocsContextStatus, RetrievalInfo } from "@/types/rag";
 
 /**
@@ -17,10 +20,14 @@ export interface PreparedRequest {
   request: ChatRequest;
   /** What the search found; sent to the browser as the stream's `context` event. */
   context: RetrievalInfo;
+  /** Generate mode: the script being modified, kept for the preservation check after the reply. */
+  original?: string | null;
 }
 
 export interface RagPipeline {
   prepare(request: ChatRequest): PreparedRequest;
+  /** Checks a script against the indexed documentation (syntax, API names, parameters, events, preservation). */
+  check(code: string, original?: string | null): ScriptCheck;
   status(): DocsContextStatus;
 }
 
@@ -44,7 +51,23 @@ const failed = (message: string, db: Db | null, question: string): Retrieval => 
 
 export function createRagPipeline(getDb: () => Db, options: RetrieveOptions = {}): RagPipeline {
   return {
+    check(code, original) {
+      return verifyScript(getDb(), code, { original });
+    },
     prepare(request) {
+      if (request.mode === "generate") {
+        try {
+          return prepareGeneration(getDb(), request);
+        } catch (error) {
+          // Generation must not run without documentation silently: the failure is reported in the context.
+          const message = error instanceof Error ? error.message : "The documentation search failed.";
+          const failure = failed(message, null, request.messages[request.messages.length - 1]?.content ?? "");
+          const { docs: _d, mode: _m, ...rest } = request;
+          void _d;
+          void _m;
+          return { request: { ...rest, messages: buildPrompt(request.messages, failure).messages }, context: failure.info, original: null };
+        }
+      }
       let db: Db | null = null;
       let retrieval: Retrieval;
       try {

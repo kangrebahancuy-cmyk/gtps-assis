@@ -1,4 +1,6 @@
 import type { AiErrorKind, FinishReason, ProviderId } from "@/types/ai";
+import type { ChatMode } from "@/lib/chat/mode";
+import type { ScriptCheck } from "@/types/lua";
 import type { RetrievalInfo } from "@/types/rag";
 
 /** Data model of the chat history. Everything here is stored locally in the browser (IndexedDB). */
@@ -28,6 +30,10 @@ export interface MessageMeta {
   edited?: boolean;
   /** What the documentation search found for this reply (sources, counts). Absent when documentation search was off. */
   docs?: RetrievalInfo;
+  /** Generator replies: the script in the reply checked against the documentation. */
+  check?: ScriptCheck;
+  /** User messages: how this one was sent, when it differs from the conversation's mode (e.g. "Explain Code" in a generator chat). */
+  requestMode?: ChatMode;
 }
 
 export interface StoredMessage {

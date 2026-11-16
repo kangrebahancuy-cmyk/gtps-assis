@@ -1,13 +1,20 @@
 "use client";
 
+import { useEffect } from "react";
+
 import { ChatHeader } from "@/features/chat/chat-header";
 import { useChat } from "@/features/chat/chat-provider";
 import { Composer } from "@/features/chat/composer";
 import { MessageList } from "@/features/chat/message-list";
 import { WelcomeScreen } from "@/features/chat/welcome-screen";
+import type { ChatMode } from "@/lib/chat/mode";
 
-export function ChatView() {
-  const { state } = useChat();
+/** `mode` is the page: /chat opens a chat conversation, /generator a script-generator conversation. */
+export function ChatView({ mode = "chat" }: { mode?: ChatMode }) {
+  const { state, chat } = useChat();
+  useEffect(() => {
+    void chat?.ensureMode(mode);
+  }, [chat, mode]);
   const busy = state.generating.includes(state.active.id);
 
   return (

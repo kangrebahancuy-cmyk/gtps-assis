@@ -7,6 +7,7 @@ export const APP_NAME = "GTPS Assistant";
 export const APP_TAGLINE = "Your AI-powered GTPS development companion.";
 
 export const NAV_ITEMS: readonly NavItem[] = [
+  { id: "generator", label: "Script Generator", href: "/generator", icon: "wand" },
   { id: "docs", label: "Documentation", href: "/docs", icon: "book" },
   { id: "workspace", label: "Lua Workspace", href: "/workspace", icon: "code" },
   { id: "models", label: "AI Models", href: "/settings/models", icon: "cpu" },
@@ -64,6 +65,16 @@ export const EXAMPLE_PROMPTS: readonly string[] = [
   "Debug my Lua script.",
 ];
 
+/** Starting points for the Script Generator: the kinds of scripts it is built for. */
+export const GENERATOR_PROMPTS: readonly { label: string; prompt: string }[] = [
+  { label: "Custom player command", prompt: "Create a custom player command /hello that greets the player by name." },
+  { label: "Daily reward system", prompt: "Create a daily reward system: each player can claim a reward once every 24 hours and is told when they can claim again." },
+  { label: "NPC shop", prompt: "Create an NPC shop where players can buy items for gems." },
+  { label: "Automatic event", prompt: "Create an automatic event that announces itself to all players every 30 minutes." },
+  { label: "Player moderation system", prompt: "Create a player moderation system with kick and mute commands that only admins can use." },
+  { label: "Mailbox reward system", prompt: "Create a mailbox reward system that sends a mail with an item reward to a player." },
+  { label: "Custom item interaction", prompt: "Create a custom item interaction: when a player activates a special item on a tile, something happens in the world." },
+];
 
 export const PLACEHOLDER_PROVIDERS: readonly string[] = [
   "No provider connected",

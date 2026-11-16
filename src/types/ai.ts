@@ -3,6 +3,7 @@
  * responses expose only whether a key is configured and its last characters.
  */
 
+import type { ScriptCheck } from "@/types/lua";
 import type { RetrievalInfo } from "@/types/rag";
 
 export const PROVIDER_IDS = ["gemini", "groq"] as const;
@@ -159,6 +160,11 @@ export interface ChatMessage {
  */
 export interface ChatRequest {
   docs?: boolean;
+  /**
+   * "generate" is the Lua script generator: documentation is always searched (docs is implied), the
+   * generator prompt is used and the finished script is checked against the documentation.
+   */
+  mode?: "chat" | "generate";
   provider?: ProviderId;
   model?: string;
   messages: ChatMessage[];
@@ -173,6 +179,8 @@ export type ChatStreamEvent =
   /** What the documentation search found for this question (only with `docs: true`); comes right after `start`. */
   | { type: "context"; context: RetrievalInfo }
   | { type: "delta"; text: string }
+  /** Generate mode: the result of checking the script in the reply against the documentation; comes right before `done`. */
+  | { type: "script_check"; check: ScriptCheck }
   | { type: "usage"; inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
   | { type: "done"; finishReason: FinishReason }
   | { type: "error"; error: AiErrorInfo };

@@ -467,6 +467,80 @@ node --import tsx --no-warnings --test tests/rag-retrieval.test.ts tests/rag-cha
 - Real Gemini/Groq were not contacted: whether a real model cites correctly or resists injected
   text is untested. Groq free-tier token limits may need a smaller budget (`maxContextTokens`).
 
+## Lua Script Generator (Step 8)
+
+Open **Script Generator** in the sidebar (`/generator`). Describe a script in your own words (English or
+Indonesian), or paste a script and say what to change. Each generator conversation is separate from the
+normal chats (marked "script" in the history); the Gemini/Groq switch works as everywhere else.
+
+### What happens on every request (`src/server/lua/`)
+
+1. **Analyse the request** (`features.ts`, rule-based): which kind of script (custom command, daily reward,
+   NPC shop, automatic event, moderation, mailbox, item interaction), and whether it modifies a script
+   (pasted code, or a follow-up to the previous reply).
+2. **Search the documentation, one search per topic** (`generate.ts`): the request itself plus the topics
+   the script type needs (for example for a daily reward: giving items, server time, saving data,
+   messages), plus callback/event registration. Excerpts from all topics are merged round-robin so each topic
+   gets its share. Retrieval **cannot be skipped**: generate mode forces it, and without a documentation
+   index the request is refused (HTTP 409) instead of running unguided.
+3. **Verified API reference**: the API entries on the retrieved pages (signature, parameters, returns), plus the
+   complete list of documented event and callback names, go into the prompt next to the excerpts.
+4. **Generator prompt**: the model must use only those names, never present standard Lua as GTPS API, say what the
+   documentation is missing (`-- NOT IMPLEMENTED: needs ...`), return the complete script in one `lua` block, and
+   answer in the fixed format: Script name, Purpose, (What changed), Complete Lua code, Required configuration,
+   Installation instructions, Usage instructions, Explanation, Documentation references, Known limitations.
+5. **Check the finished script** (`src/lib/lua/`, `verify.ts`) and stream the result as a `script_check` event.
+
+### The script check (no Lua binary needed)
+
+- **Syntax**: a real Lua 5.1-5.4 lexer and recursive-descent parser with line/column errors worded like the
+  reference compiler (`'end' expected (to close 'if' at line 2) near <eof>`).
+- **API names**: every call is looked up in the indexed documentation (case-sensitive). Not found = error, with a
+  "did you mean" for a different letter case. Standard Lua (`string`, `table`, `os`, `pairs`...) is classified
+  as standard Lua and never as GTPS API; `os.execute`, `io.*`, `load`... get a warning.
+- **Parameters**: argument counts against the documented parameters (`Owner.method(self, ...)` and
+  `Owner:method(...)` both accepted; a call ending in another call may expand).
+- **Events and callbacks**: handler names and any `onXxx` string must be documented events/callbacks;
+  handler parameter counts are compared with the documented ones.
+- **Complete**: placeholder comments such as `-- ... rest of the code` fail the check.
+- **Modification**: top-level parts of the original and the new script are compared (unchanged / changed /
+  removed / added); a removed part is a warning.
+- A method called on a value of unknown type is checked by member name only (variable types are not inferred),
+  and calls that cannot be resolved are reported as "unverified" instead of being guessed.
+
+`POST /api/lua/check` `{ code, original? }` runs the same check on any script.
+
+### Script actions
+
+Copy, Download .lua (name from the reply), Open in Lua Workspace (added as a unique file name), Explain Code
+(answered from the documentation, nothing rewritten), Optimize, Refactor, Add Comments, Fix Errors (sends the
+check's findings), Modify Script (asks what to change), Generate Alternative (a new script, not a diff against
+the old one). All except Explain go through the generator, so documentation is retrieved and the new script is
+checked again. Each reply has a **Generation report**: request type, topics searched with the number of excerpts
+each found, topics with no documentation, and the check result.
+
+### Tests
+
+- `lua-parser.test.ts` (19), `lua-verify.test.ts` (20): parser and verifier units.
+- `lua-generate.test.ts` (43): real client and handler, SQLite documentation, fake Gemini/Groq; asserts what the
+  providers **received** for 8 requests, invented APIs/events, syntax errors, truncated and abbreviated scripts,
+  modification preservation, missing documentation, provider switching, validation and `/api/lua/check`.
+- `lua-chat-engine.test.ts` (14), `lua-actions.test.ts` (6), `tests/ui/generator-ui.test.tsx` (7).
+- `tests/browser/generator.browser.ts` (16): real Chromium; generate, report, every action, download and clipboard,
+  workspace, provider switch, reload.
+
+### Verified and not verified
+
+- The documentation is the **synthetic** fixture (`tests/support/gtps-lua-fixture.ts`, 16 invented pages): API names
+  and behavior in it are not GTPS Cloud's. Retrieval for the seven script types was not run on the real
+  documentation; topic queries and thresholds are tuned on the fixture only.
+- Fake Gemini/Groq servers return scripted replies: the tests prove what is sent and what the app does with a
+  reply, **not** that a real model writes correct GTPS Lua or follows the format.
+- Verified against the documentation means "the name/parameters exist as indexed"; it does not mean the script
+  runs correctly on a server. No Lua interpreter is available here, so scripts are never executed.
+- Chromium tests use stand-ins for `zustand` (not installed in this environment, so workspace persistence in
+  localStorage is not exercised), `next/navigation`, lucide icons and Tailwind utilities.
+
 ## Project structure
 
 ```
@@ -503,4 +577,5 @@ src/
 5. **Step 5:** multi-provider AI integration (Gemini, Groq), settings, unified service.
 6. **Step 6:** AI chat (streaming, history in IndexedDB, model selector).
 7. **Step 7:** documentation-aware answers (retrieval, citations, context indicator).
-8. Later steps: Lua generation.
+8. **Step 8:** Lua script generator (documentation workflow, script check, actions).
+9. Later steps.

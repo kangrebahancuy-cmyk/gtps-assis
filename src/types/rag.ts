@@ -3,6 +3,8 @@
  * Everything here describes what really happened for one question: nothing is estimated for display.
  */
 
+import type { GenerationAnalysis } from "@/types/lua";
+
 export type IntentKind = "smalltalk" | "api_lookup" | "code_example" | "modify_script" | "how_to" | "general";
 
 /**
@@ -72,6 +74,8 @@ export interface RetrievalInfo {
   conflicts: DocConflict[];
   /** Indexed state at the time of the question. */
   index: { documents: number; chunks: number; lastSyncAt: string | null };
+  /** Present for script generation requests: what was analysed and searched before the model was called. */
+  generation?: GenerationAnalysis;
 }
 
 /** What the chat header shows when no question has been asked yet. */

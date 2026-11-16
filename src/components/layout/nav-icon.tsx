@@ -1,4 +1,4 @@
-import { BookOpen, Code2, Cpu, Settings, type LucideIcon } from "lucide-react";
+import { BookOpen, Code2, Cpu, Settings, Sparkles, type LucideIcon } from "lucide-react";
 
 import type { NavIconName } from "@/types";
 
@@ -7,6 +7,7 @@ const ICONS: Record<NavIconName, LucideIcon> = {
   code: Code2,
   cpu: Cpu,
   settings: Settings,
+  wand: Sparkles,
 };
 
 interface NavIconProps {

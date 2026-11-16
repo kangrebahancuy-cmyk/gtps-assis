@@ -1,4 +1,5 @@
 import { isProviderId } from "@/types/ai";
+import type { ApiUse, Finding, GenerationAnalysis, ScriptCheck } from "@/types/lua";
 import type { Citation, RetrievalInfo } from "@/types/rag";
 import { EXPORT_FORMAT, EXPORT_VERSION, type ChatSnapshot, type ExportedConversation, type ExportFile, type MessageMeta, type MessageStatus, type StoredMessage } from "@/lib/chat/types";
 
@@ -91,6 +92,63 @@ function parseRetrieval(value: unknown): RetrievalInfo | null {
       ? value.conflicts.filter(isObject).slice(0, 20).map((c) => ({ name: text(c.name, 100) ?? "", sources: Array.isArray(c.sources) ? c.sources.map(count).slice(0, 20) : [], note: text(c.note, 300) ?? "" }))
       : [],
     index: { documents: count(index.documents), chunks: count(index.chunks), lastSyncAt: text(index.lastSyncAt, 40) },
+    ...(parseGeneration(value.generation) ? { generation: parseGeneration(value.generation) as GenerationAnalysis } : {}),
+  };
+}
+
+const strings = (x: unknown, max: number, each = 120): string[] => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string").slice(0, max).map((v) => v.slice(0, each)) : []);
+
+function parseGeneration(value: unknown): GenerationAnalysis | null {
+  if (!isObject(value)) return null;
+  return {
+    features: strings(value.features, 12, 40),
+    featureLabels: strings(value.featureLabels, 12, 80),
+    modifying: value.modifying === true,
+    topics: Array.isArray(value.topics)
+      ? value.topics.filter(isObject).slice(0, 12).map((t) => ({ label: text(t.label, 120) ?? "", query: text(t.query, 160) ?? "", found: count(t.found) }))
+      : [],
+    missingTopics: strings(value.missingTopics, 12),
+    requiredApis: strings(value.requiredApis, 60, 80),
+  };
+}
+
+const FINDING_KINDS = ["syntax", "incomplete", "undocumented_api", "wrong_arguments", "unknown_event", "callback_signature", "lua_standard", "restricted_lua", "unverified_call", "removed_feature", "changed_feature", "preservation_skipped"];
+const API_STATUSES = ["documented", "undocumented", "lua_standard", "unresolved"];
+const API_KINDS = ["function", "method", "callback", "event"];
+
+function parseScriptCheck(value: unknown): ScriptCheck | null {
+  if (!isObject(value) || !isObject(value.syntax) || !isObject(value.stats)) return null;
+  const syntax: ScriptCheck["syntax"] =
+    value.syntax.ok === true
+      ? { ok: true }
+      : { ok: false, message: text(value.syntax.message, 400) ?? "", line: count(value.syntax.line), column: count(value.syntax.column) };
+  const preservation = isObject(value.preservation)
+    ? { preserved: strings(value.preservation.preserved, 60, 160), modified: strings(value.preservation.modified, 60, 160), removed: strings(value.preservation.removed, 60, 160), added: strings(value.preservation.added, 60, 160) }
+    : null;
+  return {
+    syntax,
+    stats: { lines: count(value.stats.lines), functions: count(value.stats.functions), calls: count(value.stats.calls), units: count(value.stats.units) },
+    apiUses: Array.isArray(value.apiUses)
+      ? value.apiUses.filter(isObject).slice(0, 120).flatMap((u): ApiUse[] => {
+          const name = text(u.name, 120);
+          if (name === null || !API_STATUSES.includes(String(u.status))) return [];
+          const source = isObject(u.source) && text(u.source.url, 1000) !== null ? { documentId: count(u.source.documentId), title: text(u.source.title, 300) ?? "", url: text(u.source.url, 1000) ?? "" } : null;
+          return [{
+            name, status: u.status as ApiUse["status"], documentedAs: text(u.documentedAs, 120), signature: text(u.signature, 200),
+            kind: API_KINDS.includes(String(u.kind)) ? (u.kind as ApiUse["kind"]) : null, source,
+            lines: Array.isArray(u.lines) ? u.lines.map(count).slice(0, 30) : [], suggestion: text(u.suggestion, 120),
+          }];
+        })
+      : [],
+    findings: Array.isArray(value.findings)
+      ? value.findings.filter(isObject).slice(0, 80).flatMap((f): Finding[] => {
+          const message = text(f.message, 600);
+          if (message === null || !FINDING_KINDS.includes(String(f.kind)) || !["error", "warning", "info"].includes(String(f.severity))) return [];
+          return [{ kind: f.kind as Finding["kind"], severity: f.severity as Finding["severity"], message, line: typeof f.line === "number" ? count(f.line) : null, name: text(f.name, 120) }];
+        })
+      : [],
+    preservation,
+    passed: value.passed === true,
   };
 }
 
@@ -112,6 +170,9 @@ function parseMeta(value: unknown): MessageMeta {
   if (value.edited === true) meta.edited = true;
   const docs = parseRetrieval(value.docs);
   if (docs) meta.docs = docs;
+  const check = parseScriptCheck(value.check);
+  if (check) meta.check = check;
+  if (value.requestMode === "chat" || value.requestMode === "generate") meta.requestMode = value.requestMode;
   return meta;
 }
 

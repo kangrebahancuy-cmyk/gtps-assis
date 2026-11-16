@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 
-import { handleChat, handleGetSettings, handleModels, handleRemoveConfig, handleSaveConfig, handleTest } from "@/server/ai/api";
+import { handleChat, handleGetSettings, handleLuaCheck, handleModels, handleRemoveConfig, handleSaveConfig, handleTest } from "@/server/ai/api";
 import { AiConfigStore } from "@/server/ai/config-store";
 import { createGeminiProvider } from "@/server/ai/providers/gemini";
 import { createGroqProvider } from "@/server/ai/providers/groq";
@@ -65,6 +65,7 @@ export async function startBackend(options: BackendOptions = {}): Promise<Backen
       case "/api/ai/models": return handleModels(service)(request);
       case "/api/ai/test": return handleTest(service)(request);
       case "/api/ai/chat": return handleChat(service, rag)(request);
+      case "/api/lua/check": return rag ? handleLuaCheck(rag)(request) : new Response("{}", { status: 404 });
       case "/api/docs/context": return rag ? Response.json(rag.status()) : new Response("{}", { status: 404 });
       default: return new Response("{}", { status: 404 });
     }
@@ -91,7 +92,7 @@ export async function startBackend(options: BackendOptions = {}): Promise<Backen
     },
     fetch: inProcess,
     async http(req, res) {
-      if (!req.url?.startsWith("/api/ai/") && !req.url?.startsWith("/api/docs/context")) return false;
+      if (!req.url?.startsWith("/api/ai/") && !req.url?.startsWith("/api/docs/context") && !req.url?.startsWith("/api/lua/")) return false;
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const hasBody = !["GET", "HEAD", "DELETE"].includes(req.method ?? "GET");

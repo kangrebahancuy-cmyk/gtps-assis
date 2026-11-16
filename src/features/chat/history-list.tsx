@@ -5,15 +5,16 @@ import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { useChat } from "@/features/chat/chat-provider";
+import { modeOf } from "@/lib/chat/mode";
 import type { Conversation } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 
 interface HistoryListProps {
-  /** Called after a chat is opened or created, e.g. to go to /chat or to close the mobile drawer. */
-  onOpenChat?: () => void;
+  /** Called after a chat is opened, with the conversation, e.g. to go to /chat or /generator and to close the mobile drawer. */
+  onOpenChat?: (conversation: Conversation) => void;
 }
 
-function Row({ conversation, snippet, active, generating, onOpenChat }: { conversation: Conversation; snippet: string | null; active: boolean; generating: boolean; onOpenChat?: () => void }) {
+function Row({ conversation, snippet, active, generating, onOpenChat }: { conversation: Conversation; snippet: string | null; active: boolean; generating: boolean; onOpenChat?: (conversation: Conversation) => void }) {
   const { chat } = useChat();
   const [mode, setMode] = useState<"view" | "rename" | "delete">("view");
   const [title, setTitle] = useState(conversation.title);
@@ -72,9 +73,10 @@ function Row({ conversation, snippet, active, generating, onOpenChat }: { conver
     <li className="group relative">
       <button
         type="button"
-        onClick={() => {
-          void chat?.select(conversation.id);
-          onOpenChat?.();
+        onClick={async () => {
+          // Opened first, so the page that is navigated to finds the right conversation already active.
+          await chat?.select(conversation.id);
+          onOpenChat?.(conversation);
         }}
         onDoubleClick={() => {
           setTitle(conversation.title);
@@ -85,7 +87,10 @@ function Row({ conversation, snippet, active, generating, onOpenChat }: { conver
       >
         <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate">{conversation.title}</span>
+          <span className="block truncate">
+            {modeOf(conversation) === "generate" ? <span className="mr-1.5 rounded border border-border px-1 text-[10px] uppercase tracking-wide text-muted-foreground" data-testid="history-generator-tag">script</span> : null}
+            {conversation.title}
+          </span>
           {snippet ? <span className="block truncate text-xs text-muted-foreground">{snippet}</span> : null}
         </span>
         {generating ? (

@@ -9,6 +9,7 @@ import { NavIcon } from "@/components/layout/nav-icon";
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/features/chat/chat-provider";
 import { HistoryList } from "@/features/chat/history-list";
+import { modeOf, type ChatMode } from "@/lib/chat/mode";
 import { NAV_ITEMS } from "@/lib/constants";
 import { isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -33,14 +34,16 @@ export function SidebarContent({
   const { chat } = useChat();
 
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  function goToChat() {
-    router.push("/chat");
+  function goTo(mode: ChatMode) {
+    router.push(mode === "generate" ? "/generator" : "/chat");
     onNavigate?.();
   }
 
+  // "New Chat" starts the kind of conversation of the page you are on.
   function handleNewChat() {
-    void chat?.newChat();
-    goToChat();
+    const mode: ChatMode = pathname.startsWith("/generator") ? "generate" : "chat";
+    void chat?.newChat(mode);
+    goTo(mode);
   }
 
   function handleExpandAndSearch() {
@@ -102,7 +105,7 @@ export function SidebarContent({
       </div>
 
       {/* Chat history */}
-      {collapsed ? <div className="min-h-0 flex-1" /> : <HistoryList onOpenChat={goToChat} />}
+      {collapsed ? <div className="min-h-0 flex-1" /> : <HistoryList onOpenChat={(conversation) => goTo(modeOf(conversation))} />}
 
       {/* Primary navigation */}
       <nav

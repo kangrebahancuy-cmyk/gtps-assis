@@ -3,6 +3,7 @@
 import { useChat } from "@/features/chat/chat-provider";
 import { useDocsContext } from "@/features/chat/use-docs-context";
 import { citedNumbers } from "@/lib/chat/citations";
+import { modeOf } from "@/lib/chat/mode";
 import { formatDateTime } from "@/lib/format";
 import type { StoredMessage } from "@/lib/chat/types";
 
@@ -26,9 +27,10 @@ export function ContextIndicator() {
   const context = useDocsContext(`${state.generating.length}|${state.active.id}`);
   const message = lastSearch(state.messages);
   const docs = message?.meta.docs ?? null;
+  const generator = modeOf(state.active) === "generate";
 
   let search: string;
-  if (!state.docsSearch) search = "Off";
+  if (!generator && !state.docsSearch) search = "Off";
   else if (context.phase === "loading") search = "Checking…";
   else if (context.phase === "unreachable") search = "Unknown (backend unreachable)";
   else search = context.status.available ? "Active" : "Unavailable (no documentation indexed)";
@@ -40,12 +42,18 @@ export function ContextIndicator() {
 
   return (
     <div role="group" aria-label="Documentation context" data-testid="context-indicator" className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      <label className="flex items-center gap-1.5">
-        <input type="checkbox" checked={state.docsSearch} onChange={(event) => chat?.setDocsSearch(event.target.checked)} aria-label="Search documentation before answering" />
-        <span>
-          Documentation Search: <strong data-testid="ctx-search" className="font-medium text-foreground">{search}</strong>
+      {generator ? (
+        <span title="The script generator always searches the documentation first">
+          Documentation Search: <strong data-testid="ctx-search" className="font-medium text-foreground">{search} (always on)</strong>
         </span>
-      </label>
+      ) : (
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={state.docsSearch} onChange={(event) => chat?.setDocsSearch(event.target.checked)} aria-label="Search documentation before answering" />
+          <span>
+            Documentation Search: <strong data-testid="ctx-search" className="font-medium text-foreground">{search}</strong>
+          </span>
+        </label>
+      )}
       <span title={why}>
         Documents Retrieved: <strong data-testid="ctx-retrieved" className="font-medium text-foreground">{retrieved}</strong>
       </span>

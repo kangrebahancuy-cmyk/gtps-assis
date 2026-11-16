@@ -2,15 +2,21 @@
 
 import { AlertTriangle, Bot, Check, Copy, Pencil, RefreshCw, User } from "lucide-react";
 import Link from "next/link";
-import { memo, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/features/chat/chat-provider";
 import { MarkdownRenderer } from "@/features/chat/markdown-renderer";
+import { GenerationReport } from "@/features/chat/generation-report";
+import { ScriptActions } from "@/features/chat/script-actions";
 import { SourcesPanel } from "@/features/chat/sources-panel";
 import { errorHint } from "@/lib/ai-format";
 import { copyText } from "@/lib/clipboard";
 import { PROVIDER_LABELS } from "@/lib/chat/models";
+import { buildActionPrompt, scriptFileName, SCRIPT_ACTIONS, type ScriptAction } from "@/lib/lua/actions";
+import { extractScript } from "@/lib/lua/extract";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import type { StoredMessage } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +134,41 @@ function UserBubble({ message, busy }: { message: StoredMessage; busy: boolean }
   );
 }
 
+/** What the person asked for, without any pasted code (used to describe the job when an alternative is requested). */
+const plainRequest = (content: string): string => content.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+
+/** Report and actions of a generated script. Reads the chat state only here, so ordinary replies do not re-render on every change. */
+function GeneratorTools({ message, busy }: { message: StoredMessage; busy: boolean }) {
+  const { state, chat } = useChat();
+  const router = useRouter();
+  const script = useMemo(() => extractScript(message.content), [message.content]);
+  if (!script || message.status === "streaming") return null;
+  const code = script.code;
+  const fileName = scriptFileName(message.content);
+
+  function act(action: ScriptAction, instruction?: string) {
+    const spec = SCRIPT_ACTIONS.find((a) => a.id === action);
+    if (!spec || !chat) return;
+    const asked = state.messages.find((m) => m.conversationId === message.conversationId && m.order === message.order - 1);
+    const prompt = buildActionPrompt(action, { code, check: message.meta.check, instruction, originalRequest: asked ? plainRequest(asked.content) : "" });
+    void chat.send(prompt, { mode: spec.mode });
+  }
+
+  return (
+    <ScriptActions
+      code={code}
+      fileName={fileName}
+      busy={busy}
+      incomplete={!script.closed}
+      onOpenInWorkspace={() => {
+        useWorkspaceStore.getState().addFile(fileName, code);
+        router.push("/workspace");
+      }}
+      onAction={act}
+    />
+  );
+}
+
 function AssistantBubble({ message, isLast, busy }: MessageItemProps) {
   const { chat } = useChat();
   const streaming = message.status === "streaming";
@@ -167,6 +208,8 @@ function AssistantBubble({ message, isLast, busy }: MessageItemProps) {
         {message.status === "complete" && message.content === "" ? <p className="py-1 text-xs text-muted-foreground">The model returned an empty reply.</p> : null}
 
         <SourcesPanel message={message} />
+        <GenerationReport message={message} />
+        {message.meta.check || message.meta.docs?.generation ? <GeneratorTools message={message} busy={busy} /> : null}
 
         {error ? (
           <div role="alert" className="my-2 flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">

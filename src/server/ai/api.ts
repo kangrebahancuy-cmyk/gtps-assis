@@ -1,3 +1,4 @@
+import { extractScript } from "@/lib/lua/extract";
 import { assertLocalRequest } from "@/server/ai/guard";
 import { AiError, toErrorInfo } from "@/server/ai/errors";
 import type { AiService } from "@/server/ai/service";
@@ -28,7 +29,7 @@ const STATUS: Record<AiErrorKind, number> = {
 
 const NO_STORE = { "cache-control": "no-store" };
 
-const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
+export const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   Response.json(body, { status, headers: { ...NO_STORE, ...headers } });
 
 export function errorResponse(error: unknown, provider: ProviderId | null = null): Response {
@@ -38,7 +39,7 @@ export function errorResponse(error: unknown, provider: ProviderId | null = null
   return json({ error: info }, STATUS[info.kind], headers);
 }
 
-async function readJson(request: Request, maxBytes: number): Promise<unknown> {
+export async function readJson(request: Request, maxBytes: number): Promise<unknown> {
   const text = await request.text();
   if (text.length > maxBytes) throw new AiError("invalid_input", "The request body is too large.");
   try {
@@ -51,7 +52,7 @@ async function readJson(request: Request, maxBytes: number): Promise<unknown> {
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** Wraps a handler: local-request checks first, then safe error mapping. */
-function guarded(mutation: boolean, handler: (request: Request) => Promise<Response>) {
+export function guarded(mutation: boolean, handler: (request: Request) => Promise<Response>) {
   return async (request: Request): Promise<Response> => {
     try {
       assertLocalRequest(request, { mutation });
@@ -139,12 +140,27 @@ export const handleChat = (service: AiService, rag?: RagPipeline) =>
     request.signal.addEventListener("abort", () => abort.abort(), { once: true });
 
     // Documentation search (Step 7): done here, on the server, before the provider is called.
+    if (chat.mode === "generate" && !rag) throw new AiError("not_configured", "The script generator needs the documentation index, which is not available.");
     const prepared = chat.docs && rag ? rag.prepare(chat) : null;
     const providerRequest = prepared ? prepared.request : chat;
     const source = service.streamChat(providerRequest, abort.signal);
+    const generating = chat.mode === "generate" && prepared !== null && rag !== undefined;
     const events: AsyncGenerator<ChatStreamEvent> = prepared
       ? (async function* () {
+          let reply = "";
           for await (const event of source) {
+            if (event.type === "delta") reply += event.text;
+            // The script is checked against the documentation once the reply is complete, right before `done`.
+            if (generating && event.type === "done") {
+              const script = extractScript(reply);
+              if (script) {
+                try {
+                  yield { type: "script_check", check: rag.check(script.code, prepared.original ?? null) };
+                } catch {
+                  /* a failed check is simply not shown; the reply itself is still delivered */
+                }
+              }
+            }
             yield event;
             if (event.type === "start") yield { type: "context", context: prepared.context };
           }
@@ -197,5 +213,17 @@ export const handleChat = (service: AiService, rag?: RagPipeline) =>
       headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store, no-transform", "x-accel-buffering": "no" },
     });
   });
+
+/** POST { code, original? } -> ScriptCheck. Checks a script (for example after the user edited it) against the documentation. */
+export const handleLuaCheck = (rag: RagPipeline) =>
+  guarded(true, async (request) => {
+    const body = await readJson(request, 1_000_000);
+    if (!isObject(body) || typeof body.code !== "string") throw new AiError("invalid_input", "code must be text.");
+    if (body.code.length > MAX_SCRIPT_CHARS) throw new AiError("invalid_input", `The script is longer than ${MAX_SCRIPT_CHARS} characters.`);
+    if (body.original !== undefined && body.original !== null && typeof body.original !== "string") throw new AiError("invalid_input", "original must be text.");
+    return json(rag.check(body.code, typeof body.original === "string" ? body.original : null));
+  });
+
+const MAX_SCRIPT_CHARS = 200_000;
 
 export const ALL_PROVIDERS = PROVIDER_IDS;
