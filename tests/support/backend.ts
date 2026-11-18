@@ -49,7 +49,7 @@ export async function startBackend(options: BackendOptions = {}): Promise<Backen
   let now = Date.now();
   let useFakeClock = false;
   const service = new AiService({
-    store: new AiConfigStore(join(dir, "ai-config.json"), {}),
+    store: new AiConfigStore(join(dir, "ai-config.json"), { NODE_ENV: "test" }),
     providers: { gemini: createGeminiProvider(gemini.baseUrl), groq: createGroqProvider(groq.baseUrl) },
     now: () => (useFakeClock ? now : Date.now()),
     sleep: async () => {},
