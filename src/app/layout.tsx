@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { ChatProvider } from "@/features/chat/chat-provider";
+import { WorkspaceProvider } from "@/features/workspace/workspace-provider";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 import { STORAGE_KEYS } from "@/services/storage";
 
@@ -34,7 +35,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className="font-sans">
         <ChatProvider>
-          <AppShell>{children}</AppShell>
+          <WorkspaceProvider>
+            <AppShell>{children}</AppShell>
+          </WorkspaceProvider>
         </ChatProvider>
       </body>
     </html>

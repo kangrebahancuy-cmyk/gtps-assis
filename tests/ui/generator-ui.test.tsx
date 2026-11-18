@@ -36,7 +36,7 @@ describe("GenerationReport", () => {
     for (const t of g.topics) assert.match(out, new RegExp(`data-found="${t.found}"`));
     assert.match(out, /data-testid="missing-topics"[^>]*>No documentation found for: .*Dialogs and menus/);
     assert.match(out, /data-passed="true"/);
-    assert.match(out, /Syntax: valid Lua/);
+    assert.match(out, /Syntax: no syntax errors found/);
     assert.match(out, /APIs used: 3 documented/);
     assert.match(out, /href="https:\/\/docs\.fixture\.test\/docs\/shop"/);
   });

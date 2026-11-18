@@ -11,12 +11,6 @@ export interface NavItem {
 
 export type NavIconName = "book" | "code" | "cpu" | "settings" | "wand";
 
-export interface LuaFile {
-  id: string;
-  name: string;
-  content: string;
-}
-
 export type SettingsSectionId =
   | "providers"
   | "models"

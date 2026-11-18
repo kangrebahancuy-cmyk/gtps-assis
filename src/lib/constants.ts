@@ -82,15 +82,3 @@ export const PLACEHOLDER_PROVIDERS: readonly string[] = [
 
 export const PLACEHOLDER_MODELS: readonly string[] = ["No model available"];
 
-export const INITIAL_LUA_FILES = [
-  {
-    id: "file_main",
-    name: "main.lua",
-    content: "-- main.lua\n-- Workspace placeholder. Write your Lua here.\n",
-  },
-  {
-    id: "file_scratch",
-    name: "scratch.lua",
-    content: "-- scratch.lua\n",
-  },
-] as const;

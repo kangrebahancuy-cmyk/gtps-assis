@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { deleteChatDatabase } from "@/lib/chat/idb-repository";
+import { deleteWorkspaceDatabase } from "@/lib/workspace/idb-repository";
 import { clearLocalData, getLocalDataSize } from "@/services/storage";
 
 function formatBytes(bytes: number): string {
@@ -26,7 +27,7 @@ export function LocalDataPanel() {
     );
     if (!confirmed) return;
     clearLocalData();
-    await deleteChatDatabase(); // chat history lives in IndexedDB
+    await Promise.all([deleteChatDatabase(), deleteWorkspaceDatabase()]); // chat history and Lua workspace files live in IndexedDB
     // Reload so in-memory state matches the now-empty storage.
     window.location.reload();
   }
@@ -38,7 +39,7 @@ export function LocalDataPanel() {
           <div>
             <p className="text-sm font-medium">Stored in this browser</p>
             <p className="text-sm text-muted-foreground">
-              Chat history (IndexedDB), Lua workspace files, and interface preferences. The size shown covers localStorage only.
+              Chat history and Lua workspace files (both IndexedDB), and interface preferences. The size shown covers localStorage only.
             </p>
           </div>
           <div className="flex items-center gap-3">

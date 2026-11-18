@@ -10,6 +10,7 @@ import {
   type ModelCatalog,
   type ProviderId,
 } from "@/types/ai";
+import type { ScriptCheck } from "@/types/lua";
 
 /**
  * Browser-side client for the local /api/ai/* backend. It never sees a provider
@@ -115,6 +116,10 @@ export function createAiClient(options: AiClientOptions = {}) {
       const query = params.toString();
       return (await call<{ catalogs: ModelCatalog[] }>(`/api/ai/models${query ? `?${query}` : ""}`, { signal })).catalogs;
     },
+
+    /** Reads a script against the indexed documentation (never runs it). Returns the same ScriptCheck the generator shows. */
+    checkScript: (code: string, original?: string, signal?: AbortSignal) =>
+      call<ScriptCheck>("/api/lua/check", jsonInit("POST", original === undefined ? { code } : { code, original }, signal)),
 
     /** A failed test is still a normal result (`ok: false` with `error`); only transport problems throw. */
     testConnection: (

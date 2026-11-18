@@ -1,57 +1,86 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { useEffect, useState, type ComponentType } from "react";
 
-import { useUiStore } from "@/store/ui-store";
+import type { EditorEngine, EditorProps } from "./editor-types";
+import { FallbackEditor } from "./fallback-editor";
+import { MonacoEditor } from "./monaco-editor";
+import type { MonacoReactModule, MonacoReactProps } from "./monaco-types";
+
+export const MONACO_TIMEOUT_MS = 15_000;
+
+let pending: Promise<ComponentType<MonacoReactProps>> | null = null;
 
 /**
- * Monaco is loaded lazily on the client only. By default the loader fetches
- * the editor assets from a CDN at runtime, so the editor needs internet access
- * in the browser (see README).
+ * Loads Monaco once per page. @monaco-editor/react downloads the editor itself from a CDN at
+ * runtime, so this can fail (offline, blocked, slow): the promise then rejects after `timeoutMs`
+ * and the workspace falls back to the basic editor. A failed load can be retried.
  */
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
-  ssr: false,
-  loading: () => (
-    <div
-      role="status"
-      className="flex h-full items-center justify-center text-sm text-muted-foreground"
-    >
-      Loading editor…
-    </div>
-  ),
-});
-
-interface CodeEditorProps {
-  value: string;
-  onChange: (value: string) => void;
-  language?: string;
-  path?: string;
+export function loadMonaco(timeoutMs = MONACO_TIMEOUT_MS): Promise<ComponentType<MonacoReactProps>> {
+  if (!pending) {
+    const attempt = (async () => {
+      const mod = (await import("@monaco-editor/react")) as unknown as MonacoReactModule;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Monaco did not load in time (it is downloaded from a CDN).")), timeoutMs);
+      });
+      try {
+        await Promise.race([mod.loader.init(), timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+      return mod.default as unknown as ComponentType<MonacoReactProps>;
+    })();
+    pending = attempt;
+    attempt.catch(() => {
+      if (pending === attempt) pending = null;
+    });
+  }
+  return pending;
 }
 
-export function CodeEditor({
-  value,
-  onChange,
-  language = "lua",
-  path,
-}: CodeEditorProps) {
-  const theme = useUiStore((state) => state.theme);
+export interface CodeEditorProps extends EditorProps {
+  /** "basic" skips Monaco entirely. */
+  engine?: "auto" | "basic";
+  onEngine?(engine: EditorEngine, reason: string | null): void;
+  loadTimeoutMs?: number;
+}
+
+type Choice = { engine: "loading"; reason: null } | { engine: "monaco"; Editor: ComponentType<MonacoReactProps>; reason: null } | { engine: "basic"; reason: string };
+
+/** The Lua editor: Monaco when it loads, the basic editor otherwise. Both give the workspace the same EditorHandle. */
+export function CodeEditor({ engine = "auto", onEngine, loadTimeoutMs, ...props }: CodeEditorProps) {
+  const [choice, setChoice] = useState<Choice>(engine === "basic" ? { engine: "basic", reason: "The basic editor was selected." } : { engine: "loading", reason: null });
+
+  useEffect(() => {
+    if (engine === "basic") {
+      setChoice({ engine: "basic", reason: "The basic editor was selected." });
+      return;
+    }
+    let cancelled = false;
+    setChoice({ engine: "loading", reason: null });
+    loadMonaco(loadTimeoutMs).then(
+      (Editor) => !cancelled && setChoice({ engine: "monaco", Editor, reason: null }),
+      (error: unknown) => !cancelled && setChoice({ engine: "basic", reason: error instanceof Error ? error.message : "Monaco could not be loaded." }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [engine, loadTimeoutMs]);
+
+  useEffect(() => {
+    onEngine?.(choice.engine, choice.reason);
+  }, [choice, onEngine]);
 
   return (
-    <MonacoEditor
-      height="100%"
-      language={language}
-      path={path}
-      theme={theme === "dark" ? "vs-dark" : "light"}
-      value={value}
-      onChange={(next) => onChange(next ?? "")}
-      options={{
-        minimap: { enabled: false },
-        fontSize: 13,
-        scrollBeyondLastLine: false,
-        automaticLayout: true,
-        tabSize: 2,
-        padding: { top: 12 },
-      }}
-    />
+    <div className="h-full min-h-0" data-editor-engine={choice.engine}>
+      {choice.engine === "loading" && (
+        <div role="status" className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          Loading editor…
+        </div>
+      )}
+      {choice.engine === "monaco" && <MonacoEditor Editor={choice.Editor} {...props} />}
+      {choice.engine === "basic" && <FallbackEditor {...props} />}
+    </div>
   );
 }

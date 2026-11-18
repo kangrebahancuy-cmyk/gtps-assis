@@ -16,7 +16,7 @@ import { copyText } from "@/lib/clipboard";
 import { PROVIDER_LABELS } from "@/lib/chat/models";
 import { buildActionPrompt, scriptFileName, SCRIPT_ACTIONS, type ScriptAction } from "@/lib/lua/actions";
 import { extractScript } from "@/lib/lua/extract";
-import { useWorkspaceStore } from "@/store/workspace-store";
+import { useWorkspace } from "@/features/workspace/workspace-provider";
 import type { StoredMessage } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
 
@@ -141,6 +141,7 @@ const plainRequest = (content: string): string => content.replace(/```[\s\S]*?``
 function GeneratorTools({ message, busy }: { message: StoredMessage; busy: boolean }) {
   const { state, chat } = useChat();
   const router = useRouter();
+  const { workspace } = useWorkspace();
   const script = useMemo(() => extractScript(message.content), [message.content]);
   if (!script || message.status === "streaming") return null;
   const code = script.code;
@@ -161,7 +162,7 @@ function GeneratorTools({ message, busy }: { message: StoredMessage; busy: boole
       busy={busy}
       incomplete={!script.closed}
       onOpenInWorkspace={() => {
-        useWorkspaceStore.getState().addFile(fileName, code);
+        workspace?.createFile(fileName, code);
         router.push("/workspace");
       }}
       onAction={act}

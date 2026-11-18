@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { StoredMessage } from "@/lib/chat/types";
+import { RUNTIME_SCOPE } from "@/lib/workspace/validation";
 import type { ApiUse, Finding, ScriptCheck } from "@/types/lua";
 
 const SEVERITY_ICON = { error: CircleAlert, warning: TriangleAlert, info: Info } as const;
@@ -35,7 +36,7 @@ export function countUses(check: ScriptCheck): Record<ApiUse["status"], number> 
   return counts;
 }
 
-function CheckSection({ check }: { check: ScriptCheck }) {
+export function CheckSection({ check }: { check: ScriptCheck }) {
   const counts = countUses(check);
   const errors = check.findings.filter((f) => f.severity === "error").length;
   const warnings = check.findings.filter((f) => f.severity === "warning").length;
@@ -44,13 +45,16 @@ function CheckSection({ check }: { check: ScriptCheck }) {
     <div data-testid="script-check" data-passed={check.passed} className="mt-2 space-y-1.5">
       <p className="flex flex-wrap items-center gap-2">
         {check.passed ? <CircleCheck className="size-3.5 text-green-600" aria-hidden="true" /> : <CircleAlert className="size-3.5 text-destructive" aria-hidden="true" />}
-        <strong className="font-medium">{check.passed ? "Script check passed" : "Script check found problems"}</strong>
+        <strong className="font-medium">{check.passed ? "Script check: no problems found" : "Script check found problems"}</strong>
         <span className="text-muted-foreground" data-testid="check-summary">
           {check.stats.lines} lines · {check.stats.functions} function{check.stats.functions === 1 ? "" : "s"} · {check.stats.calls} call{check.stats.calls === 1 ? "" : "s"} · {errors} error{errors === 1 ? "" : "s"} · {warnings} warning{warnings === 1 ? "" : "s"}
         </span>
       </p>
       <p data-testid="syntax-status" className={check.syntax.ok ? "text-muted-foreground" : "text-destructive"}>
-        Syntax: {check.syntax.ok ? "valid Lua" : `error at line ${check.syntax.line}, column ${check.syntax.column}: ${check.syntax.message}`}
+        Syntax: {check.syntax.ok ? "no syntax errors found" : `error at line ${check.syntax.line}, column ${check.syntax.column}: ${check.syntax.message}`}
+      </p>
+      <p data-testid="runtime-note" className="text-muted-foreground">
+        {RUNTIME_SCOPE}
       </p>
       {check.apiUses.length > 0 ? (
         <>

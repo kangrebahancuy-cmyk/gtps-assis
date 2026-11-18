@@ -46,7 +46,7 @@ npm run start      # serve the production build
 | Chats | AI chat with streaming, Markdown and Lua highlighting; history in IndexedDB (search, rename, delete, export/import) | Real-model answer quality (never tested against real Gemini/Groq) |
 | Composer | Multiline input, Enter/Shift+Enter, Stop, example prompts | - |
 | Documentation | Explorer over the indexed GTPS Cloud docs: hierarchy, FTS5 search, Markdown viewer, status | Content appears only after a sync has been run |
-| Lua Workspace | Monaco editor, file tabs, live preview, local persistence | Download, Lua generation |
+| Lua Workspace | Monaco editor (basic-editor fallback), file tabs, create/rename/delete/import/export, IndexedDB storage, syntax check, documentation check, AI assistant (explain, fix, optimize, comment, refactor, modify, generate) | Real Monaco and real GTPS runtime were never tested here; scripts are never executed |
 | Settings | Theme switch, local data size and clearing, AI providers (Gemini, Groq), model discovery and default model, chat history export/import/clear | Sync preferences |
 
 The documentation explorer shows nothing until a synchronization has been run:
@@ -541,6 +541,101 @@ each found, topics with no documentation, and the check result.
 - Chromium tests use stand-ins for `zustand` (not installed in this environment, so workspace persistence in
   localStorage is not exercised), `next/navigation`, lucide icons and Tailwind utilities.
 
+## Lua Workspace (Step 9)
+
+Open **Lua Workspace** in the sidebar (`/workspace`). Files live in the browser's IndexedDB (database
+`gtps-assistant-workspace`, stores `files` and `meta`); nothing is sent to a server except what you ask the AI to
+work on.
+
+### Editor
+
+- **Monaco** (`@monaco-editor/react`, theme `vs-dark`, Lua language, line numbers, its own find/replace widget,
+  one model and undo history per file). `@monaco-editor/react` downloads Monaco from a CDN at runtime
+  (`loadMonaco`, 15 s timeout).
+- **Automatic fallback**: if Monaco cannot be loaded the workspace switches to a basic editor and says why. The
+  basic editor has line numbers (error lines in bold), Tab indentation, Ctrl/Cmd+S, and its own find/replace
+  (Ctrl+F / Ctrl+H, match case, next/previous, replace, replace all). It has **no syntax colouring**.
+- Both editors implement one interface (`EditorHandle`: selection offsets, replace range as one undoable edit,
+  open find, reveal line), so the toolbar and the AI panel do not depend on which editor runs.
+- Toolbar: Save (Ctrl/Cmd+S), Revert, Copy (the selection, or the whole file when nothing is selected),
+  Download .lua, Find, Replace, Import, Export project, Import project, AI, Full screen (Esc leaves).
+- **Unsaved changes**: a dot on the tab and in the file list, a badge in the toolbar. Saved text and unsaved
+  text are stored separately: the unsaved text is written to IndexedDB 400 ms after you stop typing, so a reload or
+  closing a tab never loses it and the file is still marked unsaved afterwards. Closing a tab keeps its unsaved
+  text. With the memory fallback (no IndexedDB) the page warns that files are not kept and the browser asks to
+  confirm leaving while edits are unsaved.
+
+### Files
+
+Create, rename (name sanitised to `snake_case.lua`, duplicates refused), delete (asks first), open, save, import
+(`.lua`/`.txt`, up to 1 MB, UTF-8 only, no NUL bytes, BOM removed, CRLF turned into LF, existing files never
+overwritten: a free name such as `main_2.lua` is used), export one file (includes unsaved edits), export and import a
+whole project (`gtps-lua-project.json`, `format: gtps-lua-workspace`, `version: 1`). The first time the workspace
+opens it creates `main.lua` (once: it does not come back after you delete it). Scripts saved by the Step 8
+workspace in localStorage (`gtps-assistant:workspace`) are imported once, without its two placeholder files.
+"Open in Lua Workspace" in the chat and the generator uses the same files. **Settings → Local Data** clears them.
+
+### Three different kinds of checking (never mixed up)
+
+1. **Syntax (local, as you type)**: the built-in Lua 5.1-5.4 parser (`src/lib/lua/parser.ts`). Errors are shown in
+   the Problems panel (click to jump) and as editor markers. A clean result says "No syntax errors found", never
+   "valid" or "works".
+2. **Documentation check (on request)**: "Check against documentation" calls `POST /api/lua/check`: are the GTPS
+   functions, parameters, callbacks used in the code in the indexed documentation? It goes stale (and says so) as
+   soon as the code changes.
+3. **GTPS runtime: not validated.** Scripts are never executed in this app. Every panel that shows a check says
+   so; only a test on a real GTPS server shows that a script works.
+
+### AI assistant
+
+Explain, Fix, Optimize, Add comments, Refactor, Modify (asks what to change) and Generate (from a description).
+They work on the **selection** when there is one, otherwise the whole file (the panel says which).
+
+- Everything except Explain uses the backend's generator mode, which **always** searches the GTPS documentation
+  and puts numbered excerpts and the documented API list in the prompt; Explain is a chat request with
+  documentation search switched on. Documentation retrieval cannot be skipped from the workspace.
+- A selection is sent as the script, with the surrounding lines as reference-only context; Fix also sends the
+  local syntax errors inside the selection (and the current documentation findings for a whole file).
+- The result shows a line **diff**, the documentation sources, the generation report and the script check. Apply
+  as: replace selection / replace whole file / insert at cursor / save as new file. Apply is **refused** when the
+  code changed after the request, and **disabled** when the reply was cut off inside the code block. One **Undo**
+  restores the text from before the apply; Ctrl+Z also works in the editor. Nothing is applied automatically.
+- Provider and model are chosen in the panel (default: the Settings defaults) and remembered. Keys stay on the
+  backend.
+
+### Tests
+
+- `workspace-core.test.ts` (32): file naming, import rules, project file, controller (tabs, dirty tracking, save,
+  drafts, rename/delete, import/export, storage failure, migration of stale ids), syntax check wording.
+- `workspace-ai.test.ts` (28): prompts for a selection and a whole file, apply rules, diff, find/replace helpers,
+  and the real round trip through the backend over the synthetic documentation: the provider **received** the
+  numbered documentation excerpts for Modify, Explain and Generate; the check knows a selection is a modification;
+  provider errors; cancellation; keys never in the prompt or the result.
+- `tests/ui/workspace-ui.test.tsx` (8): tab bar, file list, Problems panel wording, diff.
+- `tests/browser/workspace.browser.ts` (38) and `workspace-idb.browser.ts` (12): real Chromium and real
+  IndexedDB: editor loading (and fallback on failure and on timeout), file creation/rename/delete, save and the
+  unsaved indicator, multiple tabs, copy, download, import (file chooser, bad files, size limit), export,
+  project round trip into a fresh browser profile, persistence after reload and after a browser restart, syntax
+  problems, documentation check, full screen, AI Modify/Explain/Generate/Fix with the provider's received prompt
+  asserted, refusal to apply stale results, errors.
+
+### Verified and not verified
+
+- **Real Monaco was not tested.** It is not installed in this environment and cannot be downloaded. In the
+  Chromium tests `@monaco-editor/react` is replaced by a textarea that implements the part of the Monaco API the
+  adapter calls (`tests/browser/support/monaco-react-stub.tsx`). Those tests prove the wiring (file switching,
+  selection, applying edits, markers, find actions, Ctrl+S, line endings), **not** that Monaco highlights Lua, that
+  its find widget works, or that markers render. `src/features/workspace/monaco-editor.tsx` has not been run
+  against the real package or type-checked against its real types (it is written against structural types in
+  `monaco-types.ts`).
+- The basic editor and everything else are tested as themselves, in real Chromium.
+- Tailwind cannot be built here, so the pages were exercised with a hand-written stand-in for the layout utilities:
+  how the workspace looks and fits small screens was **not** verified.
+- The documentation is the synthetic fixture and the AI replies come from scripted fake Gemini/Groq servers: the
+  tests prove what is sent and what the app does with a reply, **not** that a real model gives good GTPS Lua.
+- `.tsx` files cannot be type-checked here (`@types/react` is missing); `.ts` files are.
+- Draft saving happens 400 ms after typing stops; a reload within that window can lose the last keystrokes.
+
 ## Project structure
 
 ```
@@ -553,18 +648,19 @@ src/
   hooks/          Reusable React hooks
   lib/            Constants, navigation helpers, markdown parser, Lua highlighter, utilities
     chat/         Chat engine: controller, IndexedDB/memory repositories, context, search, export
+    workspace/    Lua workspace engine: files, controller, IndexedDB/memory repositories, AI tasks, diff, find
   server/         Scraper, sync service + scheduler, SQLite layer, docs explorer, AI providers/service (server only)
   services/       Browser storage and scraper API client
-  store/          Zustand stores (ui, workspace)
+  store/          Zustand stores (ui)
   types/          Shared TypeScript types
 ```
 
 ## Notes
 
-- The Monaco editor loads its assets from a CDN at runtime, so the Lua
-  workspace editor needs internet access in the browser.
-- Settings, workspace files and theme are stored in `localStorage`; chat history
-  is in IndexedDB. Use **Settings → Local Data** to clear everything.
+- The Monaco editor loads its assets from a CDN at runtime; without internet access the workspace uses its basic
+  editor (no syntax colouring).
+- Settings and theme are stored in `localStorage`; chat history and Lua workspace files are in IndexedDB. Use
+  **Settings → Local Data** to clear everything.
 - Fonts use the system font stack, so builds do not depend on external font
   downloads.
 
@@ -578,4 +674,4 @@ src/
 6. **Step 6:** AI chat (streaming, history in IndexedDB, model selector).
 7. **Step 7:** documentation-aware answers (retrieval, citations, context indicator).
 8. **Step 8:** Lua script generator (documentation workflow, script check, actions).
-9. Later steps.
+9. **Step 9:** Lua workspace (Monaco editor, files in IndexedDB, AI assistant with documentation retrieval).

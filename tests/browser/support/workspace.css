@@ -1,0 +1,8 @@
+/* Tailwind is not available here: the layout utilities the workspace uses, written out by hand. */
+.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.flex-1{flex:1 1 0%}.min-h-0{min-height:0}.min-w-0{min-width:0}
+.h-full{height:100%}.hidden{display:none}.block{display:block}.shrink-0{flex-shrink:0}.w-56{width:14rem}.ml-auto{margin-left:auto}
+.fixed{position:fixed}.inset-0{top:0;right:0;bottom:0;left:0}.z-50{z-index:50}.items-center{align-items:center}.justify-between{justify-content:space-between}
+.overflow-auto{overflow:auto}.overflow-y-auto{overflow-y:auto}.overflow-x-auto{overflow-x:auto}.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bg-background{background:#fff}.dark .bg-background{background:#0f0f11}
+@media (min-width:768px){.md\:hidden{display:none}.md\:block{display:block}}
+.w-96{width:24rem}.max-h-64{max-height:16rem}.min-h-\[16rem\]{min-height:16rem}.break-words{overflow-wrap:break-word}.whitespace-pre{white-space:pre}.whitespace-pre-wrap{white-space:pre-wrap}

@@ -8,24 +8,8 @@ import { AiSettingsPanel } from "@/features/settings/ai/ai-settings-panel";
 import { ChatHistoryPanel } from "@/features/settings/chat-history-panel";
 import { GENERATOR_PROMPTS } from "@/lib/constants";
 import { modeOf, type ChatMode } from "@/lib/chat/mode";
-import { useWorkspaceStore } from "@/store/workspace-store";
-
-/** The workspace page of the real app is an editor; the harness only lists the files so tests can see what was added. */
-function WorkspaceStub() {
-  const files = useWorkspaceStore((s) => s.files);
-  const active = useWorkspaceStore((s) => s.activeFileId);
-  return (
-    <section aria-label="Workspace files">
-      <h1>Lua Workspace</h1>
-      {files.map((f) => (
-        <article key={f.id} data-testid="workspace-file" data-name={f.name} data-active={f.id === active}>
-          <h2>{f.name}</h2>
-          <pre>{f.content}</pre>
-        </article>
-      ))}
-    </section>
-  );
-}
+import { WorkspaceProvider } from "@/features/workspace/workspace-provider";
+import { WorkspaceView } from "@/features/workspace/workspace-view";
 
 /** A bare-bones shell around the real chat components (no Next.js): sidebar with history, chat and generator pages, settings pages. */
 function Shell() {
@@ -56,7 +40,7 @@ function Shell() {
         </nav>
       </aside>
       <main style={{ flex: 1, minWidth: 0 }}>
-        {page === "chat" ? <ChatView mode={mode} /> : page === "history" ? <ChatHistoryPanel /> : page === "workspace" ? <WorkspaceStub /> : <AiSettingsPanel section="providers" />}
+        {page === "chat" ? <ChatView mode={mode} /> : page === "history" ? <ChatHistoryPanel /> : page === "workspace" ? <WorkspaceView engine="basic" /> : <AiSettingsPanel section="providers" />}
       </main>
     </div>
   );
@@ -66,6 +50,8 @@ function Shell() {
 
 createRoot(document.getElementById("root")!).render(
   <ChatProvider>
-    <Shell />
+    <WorkspaceProvider>
+      <Shell />
+    </WorkspaceProvider>
   </ChatProvider>,
 );

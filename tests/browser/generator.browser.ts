@@ -1,7 +1,7 @@
 /**
  * The Script Generator in real Chromium: the real React components, the real chat engine, the real AI backend
  * (request analysis, multi-topic retrieval over SQLite, script check) in front of local fake Gemini/Groq servers.
- * Stand-ins: zustand (not installed here, so the workspace store does not persist), next/navigation, lucide icons and
+ * Stand-ins: zustand (not installed here), next/navigation, lucide icons and
  * Tailwind layout utilities. Run with `npm run test:browser`.
  */
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ const errors: string[] = [];
 
 before(async () => {
   be = await startBackend({ docsDb: docs.db });
-  site = await serve(await bundle(join(ROOT, "tests/browser/entries/chat-app.tsx")), [(req, res) => be.http(req, res)], '<div id="root"></div>', readFileSync(join(ROOT, "tests/browser/support/layout.css"), "utf8"));
+  site = await serve(await bundle(join(ROOT, "tests/browser/entries/chat-app.tsx")), [(req, res) => be.http(req, res)], '<div id="root"></div>', readFileSync(join(ROOT, "tests/browser/support/layout.css"), "utf8") + readFileSync(join(ROOT, "tests/browser/support/workspace.css"), "utf8"));
   browser = await chromium.launch();
 });
 after(async () => {
@@ -116,7 +116,7 @@ describe("generator page", () => {
     assert.equal(await report.getByTestId("topic").count(), searched, "the report lists the topics the model was told about");
     assert.match(await report.getByTestId("analysis").innerText(), /Custom player command/);
     assert.equal(await page.getByTestId("script-check").getAttribute("data-passed"), "true");
-    assert.match(await page.getByTestId("syntax-status").innerText(), /valid Lua/);
+    assert.match(await page.getByTestId("syntax-status").innerText(), /no syntax errors found/);
     assert.match(await page.getByTestId("api-summary").innerText(), /APIs used: 3 documented · 0 not in the documentation/);
     assert.equal(await page.getByTestId("api-use").filter({ hasText: "onPlayerCommandCallback" }).getAttribute("data-status"), "documented");
     assert.ok(await page.getByTestId("sources").count(), "documentation sources are listed");
@@ -168,15 +168,14 @@ describe("script actions", () => {
     await goGenerator();
     await generate("Create a custom player command /hello", SCRIPT);
     await page.getByRole("button", { name: "Open in Lua Workspace" }).click();
-    const file = page.locator('[data-testid="workspace-file"][data-name="hello_command.lua"]');
-    await file.waitFor();
-    assert.equal(await file.locator("pre").innerText(), SCRIPT);
-    assert.equal(await file.getAttribute("data-active"), "true");
-    assert.equal(await page.locator('[data-testid="workspace-file"]').count(), 3, "two starter files and the new one");
+    await page.locator('[data-testid="file-row"][data-name="hello_command.lua"]').waitFor();
+    assert.equal(await page.getByTestId("basic-editor").inputValue(), SCRIPT);
+    assert.equal(await page.getByRole("tab", { name: /hello_command\.lua/ }).getAttribute("aria-selected"), "true");
+    assert.equal(await page.locator('[data-testid="file-row"]').count(), 2, "the starter file and the new one");
 
     await page.getByRole("button", { name: "Go to generator" }).click();
     await page.getByRole("button", { name: "Open in Lua Workspace" }).click();
-    await page.locator('[data-testid="workspace-file"][data-name="hello_command_2.lua"]').waitFor();
+    await page.locator('[data-testid="file-row"][data-name="hello_command_2.lua"]').waitFor();
   });
 
   it("Explain Code is a documentation-backed answer, not a new script", async () => {
