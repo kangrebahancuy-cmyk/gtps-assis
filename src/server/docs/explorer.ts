@@ -345,7 +345,7 @@ function searchDocuments(db: Db, q: string, scope: SearchScope, limit: number): 
 }
 
 /** Trigram tables cannot match terms shorter than 3 characters; those use LIKE. */
-function useFts(terms: string[]): boolean {
+function canUseFts(terms: string[]): boolean {
   return terms.length > 0 && terms.every((t) => [...t].length >= 3);
 }
 
@@ -357,7 +357,7 @@ function searchApi(db: Db, q: string, scope: SearchScope, limit: number): Search
   const kindArgs = kinds ?? [];
 
   let rows: Record<string, unknown>[];
-  if (useFts(terms)) {
+  if (canUseFts(terms)) {
     rows = db
       .prepare(
         `SELECT x.*, ${REF_SELECT}
@@ -384,7 +384,7 @@ function searchCode(db: Db, q: string, limit: number): SearchResult[] {
   const terms = rawTerms(q);
   if (terms.length === 0) return [];
   let rows: Record<string, unknown>[];
-  if (useFts(terms)) {
+  if (canUseFts(terms)) {
     rows = db
       .prepare(
         `SELECT x.*, ${REF_SELECT}
