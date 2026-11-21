@@ -23,9 +23,9 @@ export const viewport: Viewport = {
  * Runs before first paint: applies the saved theme (dark by default) so the
  * page does not flash the wrong colors. Static string, no user input.
  */
-const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;var raw=localStorage.getItem(${JSON.stringify(
-  STORAGE_KEYS.ui,
-)});var theme=raw?(JSON.parse(raw).state||{}).theme:null;d.classList.toggle('dark',theme!=='light');}catch(e){document.documentElement.classList.add('dark');}})();`;
+const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;var read=function(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}};var p=read(${JSON.stringify(
+  STORAGE_KEYS.prefs,
+)});p=p&&p.prefs;if(!p){var u=read(${JSON.stringify(STORAGE_KEYS.ui)});p=u&&u.state}p=p||{};d.classList.toggle('dark',p.theme!=='light');var px={small:14,large:18}[p.uiFontSize];if(px)d.style.fontSize=px+'px';}catch(e){document.documentElement.classList.add('dark');}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

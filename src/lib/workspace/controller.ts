@@ -49,6 +49,13 @@ export interface WorkspaceOptions {
   seedFiles?: ReadonlyArray<{ name: string; content: string }>;
 }
 
+export interface WorkspaceBackup {
+  files: WorkspaceFile[];
+  tabs: string[];
+  activeId: string | null;
+  ai: AiPrefs | null;
+}
+
 export interface ImportSummary {
   imported: string[];
   failed: string[];
@@ -87,7 +94,13 @@ export class WorkspaceController {
   }
 
   // ---- loading ----
-  async init(): Promise<void> {
+  private initPromise: Promise<void> | null = null;
+  init(): Promise<void> {
+    this.initPromise ??= this.load();
+    return this.initPromise;
+  }
+
+  private async load(): Promise<void> {
     try {
       let files = await this.repo.listFiles();
       const seeded = (await this.repo.getMeta(META_SEEDED)) === "1";
@@ -297,6 +310,63 @@ export class WorkspaceController {
 
   exportProject(): string {
     return buildProject(this.state.files.map((f) => ({ name: f.name, content: textOf(f) })), new Date(this.now()));
+  }
+
+  // ---- backup and restore ----
+  /** Everything a backup keeps from the workspace: saved text AND unsaved drafts, the open tabs and the AI model choice. */
+  async backupData(): Promise<WorkspaceBackup> {
+    // Never read the files while the first load is still running: a backup or restore plan would see an empty workspace.
+    if (this.initPromise) await this.initPromise;
+    await this.flush();
+    const { files, tabs, activeId, ai } = this.state;
+    return { files: files.map((f) => ({ ...f })), tabs: [...tabs], activeId, ai };
+  }
+
+  /**
+   * Restores files from a backup. `replaceAll` removes every current file first; otherwise only `removeIds`
+   * (files about to be replaced by the backup's version) are removed. Tabs are taken from the backup only when
+   * `tabs` is given. If a write fails half-way, the previous workspace is put back and the error is thrown.
+   */
+  async restoreData(input: { files: WorkspaceFile[]; replaceAll?: boolean; removeIds?: readonly string[]; tabs?: readonly string[] | null; activeId?: string | null; ai?: AiPrefs | null }): Promise<void> {
+    const before = await this.backupData();
+    try {
+      await this.apply(input);
+    } catch (error) {
+      try {
+        await this.apply({ files: before.files, replaceAll: true, tabs: before.tabs, activeId: before.activeId, ai: before.ai });
+      } catch {
+        /* the original error is the one the caller needs */
+      }
+      throw error;
+    }
+  }
+
+  private async apply(input: { files: WorkspaceFile[]; replaceAll?: boolean; removeIds?: readonly string[]; tabs?: readonly string[] | null; activeId?: string | null; ai?: AiPrefs | null }): Promise<void> {
+    this.dirtyDrafts.clear();
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    await this.write(async () => {
+      if (input.replaceAll) {
+        await this.repo.clearAll();
+        await this.repo.setMeta(META_SEEDED, "1"); // never seed the starter file over a restored workspace
+      } else {
+        for (const id of input.removeIds ?? []) await this.repo.deleteFile(id);
+      }
+      if (input.files.length > 0) await this.repo.putFiles(input.files);
+    });
+    const files = await this.repo.listFiles();
+    const ids = new Set(files.map((f) => f.id));
+    const keepTabs = input.tabs ?? (input.replaceAll ? [] : this.state.tabs);
+    const tabs = keepTabs.filter((id) => ids.has(id));
+    const wantedActive = input.activeId !== undefined ? input.activeId : this.state.activeId;
+    const activeId = wantedActive && tabs.includes(wantedActive) ? wantedActive : (tabs[0] ?? null);
+    const ai = input.ai !== undefined ? input.ai : this.state.ai;
+    this.set({ files, tabs, activeId, ai, error: null });
+    await this.write(async () => {
+      await this.repo.setMeta(META_TABS, JSON.stringify(tabs));
+      await this.repo.setMeta(META_ACTIVE, activeId);
+      await this.repo.setMeta(META_AI, ai ? JSON.stringify(ai) : null);
+    });
   }
 
   // ---- preferences ----

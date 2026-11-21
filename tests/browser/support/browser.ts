@@ -59,6 +59,7 @@ export async function bundle(entry: string): Promise<string> {
       "zustand/middleware": join(HERE, "zustand-middleware-stub.ts"),
       zustand: join(HERE, "zustand-stub.ts"),
       "@monaco-editor/react": join(HERE, "monaco-react-stub.tsx"),
+      "@radix-ui/react-switch": join(HERE, "radix-switch-stub.tsx"),
     },
     define: { "process.env.NODE_ENV": '"development"' },
     logLevel: "silent",

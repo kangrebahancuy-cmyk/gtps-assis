@@ -16,6 +16,7 @@ import {
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useThemeSync } from "@/hooks/use-theme-sync";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/store/preferences-store";
 import { useUiStore } from "@/store/ui-store";
 
 interface AppShellProps {
@@ -26,7 +27,7 @@ export function AppShell({ children }: AppShellProps) {
   useThemeSync();
   const hydrated = useHydrated();
 
-  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
+  const { sidebarCollapsed } = usePreferences();
   const mobileOpen = useUiStore((state) => state.mobileSidebarOpen);
   const setMobileOpen = useUiStore((state) => state.setMobileSidebarOpen);
 

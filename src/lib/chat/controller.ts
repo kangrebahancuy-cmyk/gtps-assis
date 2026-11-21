@@ -3,7 +3,7 @@ import { buildContext, deriveTitle } from "@/lib/chat/context";
 import { buildExport, ImportError, parseImport } from "@/lib/chat/export";
 import { newId } from "@/lib/chat/ids";
 import { configuredProviders, selectableModels } from "@/lib/chat/models";
-import type { ChatRepository, Conversation, ImportResult, MessageError, SearchHit, StoredMessage } from "@/lib/chat/types";
+import type { ChatRepository, Conversation, ExportedConversation, ImportResult, MessageError, SearchHit, StoredMessage } from "@/lib/chat/types";
 import { AiClientError, type AiClient } from "@/services/ai-client";
 import { PROVIDER_IDS, isProviderId, type AiDefaults, type AiErrorInfo, type ChatStreamEvent, type ModelCatalog, type ProviderId, type ProviderStatus } from "@/types/ai";
 
@@ -669,6 +669,56 @@ export class ChatController {
       this.set({ notice: { tone: "error", text: error instanceof ImportError ? `Import failed: ${error.message}` : `Import failed: ${describe(error)}` } });
       return null;
     }
+  }
+
+  /** Everything a backup keeps from the chat side: all conversations with their messages, and the documentation-search switch. */
+  async backupData(): Promise<{ conversations: ExportedConversation[]; docsSearch: boolean }> {
+    return { conversations: buildExport(await this.repo.snapshot()).conversations, docsSearch: this.state.docsSearch };
+  }
+
+  /**
+   * Restores conversations from a backup. `replaceAll` removes every current chat first; `replaceIds` removes only those
+   * conversations first (they are about to be replaced by the backup's version). Nothing else is touched. If a write
+   * fails half-way, the chats from before are put back and the error is thrown.
+   */
+  async restoreData(input: { conversations: ExportedConversation[]; replaceAll?: boolean; replaceIds?: readonly string[]; docsSearch?: boolean }): Promise<ImportResult> {
+    const before = buildExport(await this.repo.snapshot()).conversations;
+    const affected = input.replaceAll ? before.map((c) => c.id) : [...(input.replaceIds ?? [])];
+    for (const id of affected) await this.drop(id);
+    try {
+      if (input.replaceAll) await this.repo.clearAll();
+      else for (const id of affected) await this.repo.deleteConversation(id);
+      const result = await this.repo.importConversations(input.conversations);
+      if (input.docsSearch !== undefined) await this.repo.setMeta(META_DOCS, input.docsSearch ? "on" : "off");
+      await this.reloadAfterRestore(affected, input.docsSearch);
+      return result;
+    } catch (error) {
+      try {
+        await this.repo.clearAll();
+        await this.repo.importConversations(before);
+        await this.reloadAfterRestore(before.map((c) => c.id));
+      } catch {
+        /* the original error below is the one the caller needs */
+      }
+      throw error;
+    }
+  }
+
+  private async reloadAfterRestore(changedIds: readonly string[], docsSearch?: boolean): Promise<void> {
+    for (const id of changedIds) {
+      this.cache.delete(id);
+      this.dropped.delete(id);
+    }
+    const conversations = await this.repo.listConversations();
+    const activeGone = !this.state.isDraft && (changedIds.includes(this.state.active.id) || !conversations.some((c) => c.id === this.state.active.id));
+    const patch: Partial<ChatState> = { conversations, search: { query: "", hits: null, pending: false } };
+    if (docsSearch !== undefined) patch.docsSearch = docsSearch;
+    if (activeGone) {
+      const target = await this.chooseTarget();
+      Object.assign(patch, { active: this.blankConversation(target), isDraft: true, messages: [] });
+      this.persistMeta(META_ACTIVE, null);
+    }
+    this.set(patch);
   }
 
   dispose(): void {

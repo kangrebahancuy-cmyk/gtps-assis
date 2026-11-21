@@ -18,6 +18,7 @@ import type { Db } from "@/server/db/database";
 import { createRagPipeline } from "@/server/rag/pipeline";
 import type { FetchLike } from "@/services/ai-client";
 import { GEMINI_KEY, GROQ_KEY, startFakeGemini, startFakeGroq, type Fake } from "../ai-fakes";
+import type { SyncRig } from "./sync-rig";
 
 export interface Backend {
   service: AiService;
@@ -39,6 +40,8 @@ export interface Backend {
 export interface BackendOptions {
   /** A documentation database: enables the documentation search (Step 7) in /api/ai/chat and /api/docs/context. */
   docsDb?: Db;
+  /** The sync backend and documentation-source settings (Step 10): serves /api/sync/* and /api/docs-source/*. */
+  sync?: SyncRig;
 }
 
 export async function startBackend(options: BackendOptions = {}): Promise<Backend> {
@@ -59,6 +62,8 @@ export async function startBackend(options: BackendOptions = {}): Promise<Backen
   });
 
   const route = (request: Request): Promise<Response> | Response => {
+    const synced = options.sync?.route(request);
+    if (synced) return synced;
     switch (new URL(request.url).pathname) {
       case "/api/ai/settings": return handleGetSettings(service)(request);
       case "/api/ai/config": return request.method === "DELETE" ? handleRemoveConfig(service)(request) : handleSaveConfig(service)(request);
@@ -92,7 +97,7 @@ export async function startBackend(options: BackendOptions = {}): Promise<Backen
     },
     fetch: inProcess,
     async http(req, res) {
-      if (!req.url?.startsWith("/api/ai/") && !req.url?.startsWith("/api/docs/context") && !req.url?.startsWith("/api/lua/")) return false;
+      if (!req.url?.startsWith("/api/ai/") && !req.url?.startsWith("/api/docs/context") && !req.url?.startsWith("/api/lua/") && !req.url?.startsWith("/api/sync/") && !req.url?.startsWith("/api/docs-source")) return false;
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const hasBody = !["GET", "HEAD", "DELETE"].includes(req.method ?? "GET");

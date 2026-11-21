@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { isLua, tokenizeLua, type LuaTokenType } from "@/lib/lua-highlight";
+import { cn } from "@/lib/utils";
+import { usePreferences } from "@/store/preferences-store";
 
 const TOKEN_CLASS: Record<LuaTokenType, string> = {
   keyword: "text-purple-600 dark:text-purple-400",
@@ -19,7 +21,8 @@ const TOKEN_CLASS: Record<LuaTokenType, string> = {
 
 /** Code text with Lua syntax highlighting when the language is Lua; plain text otherwise. */
 export function HighlightedCode({ code, language }: { code: string; language?: string | null }) {
-  const tokens = useMemo(() => (isLua(language) ? tokenizeLua(code) : null), [code, language]);
+  const { highlightCode } = usePreferences();
+  const tokens = useMemo(() => (highlightCode && isLua(language) ? tokenizeLua(code) : null), [code, language, highlightCode]);
   if (!tokens) return <code>{code}</code>;
   return (
     <code>
@@ -43,6 +46,7 @@ interface CodeBlockProps {
 
 export function CodeBlock({ code, language }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
+  const { wrapCode } = usePreferences();
 
   useEffect(() => {
     if (!copied) return;
@@ -68,7 +72,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      <pre className="overflow-x-auto p-3 font-mono text-[13px] leading-relaxed scrollbar-thin">
+      <pre data-wrap={wrapCode ? "on" : "off"} className={cn("p-3 font-mono text-[13px] leading-relaxed scrollbar-thin", wrapCode ? "whitespace-pre-wrap break-words" : "overflow-x-auto")}>
         <HighlightedCode code={code} language={language} />
       </pre>
     </div>

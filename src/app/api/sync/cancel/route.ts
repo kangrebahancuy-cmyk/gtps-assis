@@ -1,12 +1,7 @@
-import { NextResponse } from "next/server";
-import { startBackgroundServices } from "@/server/sync/runtime";
+import { handleSyncCancel } from "@/server/sync/api";
+import { getSyncApiDeps } from "@/server/sync/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export function POST() {
-  if (!startBackgroundServices().service.cancel()) {
-    return NextResponse.json({ error: "No synchronization is in progress." }, { status: 409 });
-  }
-  return NextResponse.json({ cancelling: true }, { status: 202 });
-}
+export const POST = (request: Request) => handleSyncCancel(getSyncApiDeps())(request);

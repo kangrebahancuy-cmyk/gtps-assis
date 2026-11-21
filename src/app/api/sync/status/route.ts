@@ -1,9 +1,7 @@
-import { NextResponse } from "next/server";
-import { getFullStatus } from "@/server/sync/runtime";
+import { handleSyncStatus } from "@/server/sync/api";
+import { getSyncApiDeps } from "@/server/sync/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return NextResponse.json(getFullStatus());
-}
+export const GET = (request: Request) => handleSyncStatus(getSyncApiDeps())(request);

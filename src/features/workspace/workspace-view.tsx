@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 
 import { Button } from "@/components/ui/button";
 import { AiClientError, aiClient } from "@/services/ai-client";
-import { useUiStore } from "@/store/ui-store";
+import { resolveEditorTheme } from "@/lib/preferences";
+import { usePreferences } from "@/store/preferences-store";
 import { readImportedFile } from "@/lib/workspace/files";
 import { isDirty, textOf } from "@/lib/workspace/types";
 import { checkSyntax, syntaxSummary, type SyntaxReport } from "@/lib/workspace/validation";
@@ -30,7 +31,8 @@ export interface WorkspaceViewProps {
 
 export function WorkspaceView({ engine, loadTimeoutMs }: WorkspaceViewProps = {}) {
   const { state, workspace } = useWorkspace();
-  const theme = useUiStore((s) => s.theme);
+  const prefs = usePreferences();
+  const editorTheme = resolveEditorTheme(prefs.editorTheme, prefs.theme);
   const [handle, setHandle] = useState<EditorHandle | null>(null);
   const [selection, setSelection] = useState<EditorSelection>(NO_SELECTION);
   const [engineInfo, setEngineInfo] = useState<{ engine: EditorEngine; reason: string | null }>({ engine: "loading", reason: null });
@@ -281,7 +283,8 @@ export function WorkspaceView({ engine, loadTimeoutMs }: WorkspaceViewProps = {}
                 onEngine={onEngine}
                 path={active.id}
                 value={text}
-                theme={theme === "light" ? "light" : "dark"}
+                theme={editorTheme}
+                fontSize={prefs.editorFontSize}
                 onChange={(next) => workspace.edit(active.id, next)}
                 onSave={() => void save()}
                 onReady={setHandle}

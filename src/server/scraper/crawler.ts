@@ -123,7 +123,13 @@ export class Crawler {
       repo.discoverUrl(start, null);
       repo.requeueForSync(mode);
     }
-    const queue = repo.listUrlsByStatus("pending");
+    // URLs remembered from an earlier source (another origin or path) are left alone: the crawler
+    // only ever requests pages inside the configured documentation area.
+    const pending = repo.listUrlsByStatus("pending");
+    const queue = pending.filter((url) => isDocumentationUrl(url, config));
+    if (queue.length < pending.length) {
+      log("info", `Left ${pending.length - queue.length} known URL(s) from a different documentation source untouched`);
+    }
     const startIndex = queue.indexOf(start);
     if (startIndex > 0) queue.unshift(...queue.splice(startIndex, 1)); // nav lives on the start page
     if (mode === "retry") log("info", `Retrying ${queue.length} failed page(s)`);

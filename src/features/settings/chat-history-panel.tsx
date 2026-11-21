@@ -14,6 +14,7 @@ export function ChatHistoryPanel() {
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const chats = state.conversations.length;
   const messages = state.conversations.reduce((n, c) => n + c.messageCount, 0);
@@ -101,6 +102,33 @@ export function ChatHistoryPanel() {
             </p>
           ) : null}
           {state.persistenceNote ? <p role="alert" className="text-sm text-amber-600 dark:text-amber-400">{state.persistenceNote}</p> : null}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="space-y-3 p-5">
+          <p className="text-sm font-medium">Stored chats</p>
+          {state.conversations.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="no-chats">No chats are stored.</p>
+          ) : (
+            <ul className="max-h-72 space-y-1 overflow-y-auto scrollbar-thin" aria-label="Stored chats" data-testid="stored-chats">
+              {state.conversations.map((c) => (
+                <li key={c.id} data-testid="stored-chat" className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-1.5 text-sm">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{c.title}</span>
+                    <span className="block text-xs text-muted-foreground">{c.messageCount} message(s) · {new Date(c.updatedAt).toLocaleString()}</span>
+                  </span>
+                  {deleting === c.id ? (
+                    <span className="flex shrink-0 items-center gap-1">
+                      <Button size="sm" variant="outline" onClick={async () => { setDeleting(null); await chat?.remove(c.id); }}>Delete this chat</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
+                    </span>
+                  ) : (
+                    <Button size="sm" variant="ghost" aria-label={`Delete chat ${c.title}`} onClick={() => setDeleting(c.id)}>Delete</Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
       <Card>

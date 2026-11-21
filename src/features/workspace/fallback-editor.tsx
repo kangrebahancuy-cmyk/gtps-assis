@@ -7,14 +7,16 @@ import { findAll, offsetOfLine, pickMatch, replaceAll } from "@/lib/workspace/fi
 import { cn } from "@/lib/utils";
 import type { EditorHandle, EditorProps } from "./editor-types";
 
-const LINE_HEIGHT = 20;
+/** Line height for a font size (20px at the default 13px). Both the gutter and the textarea use it so numbers stay aligned. */
+const lineHeightFor = (fontSize: number): number => Math.round(fontSize * 1.54);
 
 /**
  * The basic editor: a plain textarea with line numbers, Tab indentation, Ctrl/Cmd+S and its own
  * find and replace. It is used when Monaco cannot be loaded (for example no access to the CDN it
  * is served from). It has NO syntax highlighting; syntax errors are listed in the Problems panel.
  */
-export function FallbackEditor({ path, value, onChange, onSave, onReady, onSelection, problems, theme }: EditorProps) {
+export function FallbackEditor({ path, value, onChange, onSave, onReady, onSelection, problems, theme, fontSize = 13 }: EditorProps) {
+  const LINE_HEIGHT = lineHeightFor(fontSize);
   const area = useRef<HTMLTextAreaElement>(null);
   const gutter = useRef<HTMLDivElement>(null);
   const [find, setFind] = useState<{ open: boolean; replace: boolean }>({ open: false, replace: false });
@@ -129,15 +131,16 @@ export function FallbackEditor({ path, value, onChange, onSave, onReady, onSelec
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col", theme === "dark" ? "bg-[#1e1e1e] text-[#d4d4d4]" : "bg-white text-neutral-900")}>
-      {find.open && <FindBar text={value} replaceMode={find.replace} area={area} replaceRange={replaceRange} onClose={() => { setFind({ open: false, replace: false }); area.current?.focus(); }} />}
+    <div className={cn("flex h-full min-h-0 flex-col", theme === "dark" ? "bg-[#1e1e1e] text-[#d4d4d4]" : theme === "high-contrast" ? "bg-black text-white" : "bg-white text-neutral-900")}
+      data-editor-theme={theme}>
+      {find.open && <FindBar lineHeight={LINE_HEIGHT} text={value} replaceMode={find.replace} area={area} replaceRange={replaceRange} onClose={() => { setFind({ open: false, replace: false }); area.current?.focus(); }} />}
       <div className="flex min-h-0 flex-1">
         <div
           ref={gutter}
           aria-hidden="true"
           data-testid="line-numbers"
-          className="select-none overflow-hidden py-3 pl-2 pr-3 text-right font-mono text-xs text-neutral-500"
-          style={{ lineHeight: `${LINE_HEIGHT}px` }}
+          className="select-none overflow-hidden py-3 pl-2 pr-3 text-right font-mono text-neutral-500"
+          style={{ lineHeight: `${LINE_HEIGHT}px`, fontSize: `${Math.max(9, fontSize - 1)}px` }}
         >
           {Array.from({ length: lineCount }, (_, i) => (
             <div key={i} className={cn(errorLines.has(i + 1) && "font-bold text-red-400")}>
@@ -161,15 +164,16 @@ export function FallbackEditor({ path, value, onChange, onSave, onReady, onSelec
           wrap="off"
           aria-label="Lua code editor"
           data-testid="basic-editor"
-          className="min-h-0 flex-1 resize-none overflow-auto bg-transparent py-3 pr-3 font-mono text-[13px] outline-none"
-          style={{ lineHeight: `${LINE_HEIGHT}px`, tabSize: 2 }}
+          className="min-h-0 flex-1 resize-none overflow-auto bg-transparent py-3 pr-3 font-mono outline-none"
+          data-font-size={fontSize}
+          style={{ lineHeight: `${LINE_HEIGHT}px`, fontSize: `${fontSize}px`, tabSize: 2 }}
         />
       </div>
     </div>
   );
 }
 
-function FindBar({ text, replaceMode, area, replaceRange, onClose }: { text: string; replaceMode: boolean; area: React.RefObject<HTMLTextAreaElement | null>; replaceRange: (s: number, e: number, t: string) => void; onClose: () => void }) {
+function FindBar({ lineHeight, text, replaceMode, area, replaceRange, onClose }: { lineHeight: number; text: string; replaceMode: boolean; area: React.RefObject<HTMLTextAreaElement | null>; replaceRange: (s: number, e: number, t: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -185,7 +189,7 @@ function FindBar({ text, replaceMode, area, replaceRange, onClose }: { text: str
     if (at === null) return;
     el.setSelectionRange(at, at + query.length);
     const { line } = lineOf(el.value, at);
-    el.scrollTop = Math.max(0, (line - 4) * LINE_HEIGHT);
+    el.scrollTop = Math.max(0, (line - 4) * lineHeight);
   }
   function replaceCurrent() {
     const el = area.current;

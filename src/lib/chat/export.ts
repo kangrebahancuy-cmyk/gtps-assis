@@ -189,6 +189,11 @@ export function parseImport(text: string): ExportedConversation[] {
   } catch {
     throw new ImportError("This file is not valid JSON.");
   }
+  return parseExportValue(raw);
+}
+
+/** Validates an already-parsed export object (also used for the chat part of a full backup). */
+export function parseExportValue(raw: unknown): ExportedConversation[] {
   if (!isObject(raw) || raw.format !== EXPORT_FORMAT) throw new ImportError("This is not a GTPS Assistant chat export.");
   if (raw.version !== EXPORT_VERSION) throw new ImportError(`Unsupported export version ${String(raw.version)}.`);
   if (!Array.isArray(raw.conversations)) throw new ImportError("The export has no conversations list.");

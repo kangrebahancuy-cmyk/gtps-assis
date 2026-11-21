@@ -13,7 +13,7 @@ import { modeOf, type ChatMode } from "@/lib/chat/mode";
 import { NAV_ITEMS } from "@/lib/constants";
 import { isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-import { useUiStore } from "@/store/ui-store";
+import { preferencesStore, usePreferences } from "@/store/preferences-store";
 
 interface SidebarContentProps {
   /** Icon-only mode (desktop collapsed). Never true inside the mobile drawer. */
@@ -33,7 +33,8 @@ export function SidebarContent({
   const router = useRouter();
   const { chat } = useChat();
 
-  const toggleSidebar = useUiStore((state) => state.toggleSidebar);
+  const { sidebarHistory } = usePreferences();
+  const toggleSidebar = () => preferencesStore().set({ sidebarCollapsed: !preferencesStore().get().sidebarCollapsed });
   function goTo(mode: ChatMode) {
     router.push(mode === "generate" ? "/generator" : "/chat");
     onNavigate?.();
@@ -105,7 +106,7 @@ export function SidebarContent({
       </div>
 
       {/* Chat history */}
-      {collapsed ? <div className="min-h-0 flex-1" /> : <HistoryList onOpenChat={(conversation) => goTo(modeOf(conversation))} />}
+      {collapsed || !sidebarHistory ? <div className="min-h-0 flex-1" data-testid="sidebar-spacer" /> : <HistoryList onOpenChat={(conversation) => goTo(modeOf(conversation))} />}
 
       {/* Primary navigation */}
       <nav

@@ -2,13 +2,18 @@
 
 import { useEffect } from "react";
 
-import { useUiStore } from "@/store/ui-store";
+import { UI_FONT_PX } from "@/lib/preferences";
+import { usePreferences } from "@/store/preferences-store";
 
-/** Applies the persisted theme to <html> whenever it changes. */
+/** Applies the saved theme and text size to <html> whenever they change. */
 export function useThemeSync(): void {
-  const theme = useUiStore((state) => state.theme);
+  const { theme, uiFontSize } = usePreferences();
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.dataset.theme = theme;
+    root.dataset.uiFont = uiFontSize;
+    root.style.fontSize = `${UI_FONT_PX[uiFontSize]}px`;
+  }, [theme, uiFontSize]);
 }

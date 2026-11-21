@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { deleteChatDatabase } from "@/lib/chat/idb-repository";
 import { deleteWorkspaceDatabase } from "@/lib/workspace/idb-repository";
 import { clearLocalData, getLocalDataSize } from "@/services/storage";
+import { resetSharedPreferencesStore } from "@/store/preferences-store";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -27,6 +28,7 @@ export function LocalDataPanel() {
     );
     if (!confirmed) return;
     clearLocalData();
+    resetSharedPreferencesStore(); // the next page load starts from the default preferences
     await Promise.all([deleteChatDatabase(), deleteWorkspaceDatabase()]); // chat history and Lua workspace files live in IndexedDB
     // Reload so in-memory state matches the now-empty storage.
     window.location.reload();
@@ -55,7 +57,7 @@ export function LocalDataPanel() {
           <div>
             <p className="text-sm font-medium">Clear local data</p>
             <p className="text-sm text-muted-foreground">
-              This cannot be undone.
+              This cannot be undone. Export a backup first (Backup &amp; Restore) if you may want this data again.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void handleClear()}>

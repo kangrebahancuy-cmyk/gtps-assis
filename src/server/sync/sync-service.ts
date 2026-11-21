@@ -48,8 +48,22 @@ export class SyncService {
   private readonly listeners: Array<(run: SyncRunRecord) => void> = [];
   private readonly now: () => Date;
 
+  private config: ScraperConfig;
+
   constructor(private readonly deps: SyncServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.config = deps.config;
+  }
+
+  getConfig(): ScraperConfig {
+    return this.config;
+  }
+
+  /** Points the next run at another source. Refused while a run is open, so a run never changes target half-way. */
+  setConfig(config: ScraperConfig): boolean {
+    if (this.state !== "idle") return false;
+    this.config = config;
+    return true;
   }
 
   isBusy(): boolean {
@@ -134,7 +148,8 @@ export class SyncService {
   }
 
   private async execute(runId: string, mode: SyncMode, trigger: SyncTrigger): Promise<void> {
-    const { repo, config } = this.deps;
+    const { repo } = this.deps;
+    const config = this.config;
     const fetcher = this.deps.createFetcher(config);
     let status: SyncRunStatus = "failed";
     let error: string | null = null;

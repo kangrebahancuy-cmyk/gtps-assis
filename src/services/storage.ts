@@ -3,6 +3,7 @@ import type { StateStorage } from "zustand/middleware";
 /** All localStorage keys owned by this app. Used by "Local Data" settings. */
 export const STORAGE_KEYS = {
   ui: "gtps-assistant:ui",
+  prefs: "gtps-assistant:prefs",
   chat: "gtps-assistant:chat",
   workspace: "gtps-assistant:workspace",
 } as const;

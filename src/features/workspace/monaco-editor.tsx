@@ -14,7 +14,7 @@ const MARKER_OWNER = "gtps-syntax";
  * selection all come from Monaco itself. This component only wires it to the workspace.
  */
 export function MonacoEditor({ Editor, ...props }: EditorProps & { Editor: ComponentType<MonacoReactProps> }) {
-  const { path, value, onChange, onSave, onReady, onSelection, problems, theme } = props;
+  const { path, value, onChange, onSave, onReady, onSelection, problems, theme, fontSize = 13 } = props;
   const instance = useRef<{ editor: MonacoEditorLike; monaco: MonacoLike } | null>(null);
   // Callbacks change on every render; Monaco keeps the first one it was given, so go through refs.
   const latest = useRef({ onSave, onSelection });
@@ -35,7 +35,7 @@ export function MonacoEditor({ Editor, ...props }: EditorProps & { Editor: Compo
       height="100%"
       language="lua"
       path={path}
-      theme={theme === "dark" ? "vs-dark" : "light"}
+      theme={theme === "dark" ? "vs-dark" : theme === "high-contrast" ? "hc-black" : "light"}
       value={value}
       onChange={(next) => onChange(next ?? "")}
       onMount={(editor, monaco) => {
@@ -49,7 +49,7 @@ export function MonacoEditor({ Editor, ...props }: EditorProps & { Editor: Compo
       options={{
         minimap: { enabled: false },
         lineNumbers: "on",
-        fontSize: 13,
+        fontSize,
         tabSize: 2,
         insertSpaces: true,
         scrollBeyondLastLine: false,

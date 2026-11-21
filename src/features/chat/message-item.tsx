@@ -19,6 +19,7 @@ import { extractScript } from "@/lib/lua/extract";
 import { useWorkspace } from "@/features/workspace/workspace-provider";
 import type { StoredMessage } from "@/lib/chat/types";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/store/preferences-store";
 
 interface MessageItemProps {
   message: StoredMessage;
@@ -172,6 +173,7 @@ function GeneratorTools({ message, busy }: { message: StoredMessage; busy: boole
 
 function AssistantBubble({ message, isLast, busy }: MessageItemProps) {
   const { chat } = useChat();
+  const { renderMarkdown } = usePreferences();
   const streaming = message.status === "streaming";
   const error = message.meta.error;
   const who = message.model ? `${message.provider ? PROVIDER_LABELS[message.provider] : "Assistant"} · ${message.model}` : "Assistant";
@@ -198,7 +200,7 @@ function AssistantBubble({ message, isLast, busy }: MessageItemProps) {
           </p>
         ) : message.content !== "" ? (
           <div data-testid="assistant-text">
-            <MarkdownRenderer source={message.content} />
+            {renderMarkdown ? <MarkdownRenderer source={message.content} /> : <pre data-testid="plain-text" className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{message.content}</pre>}
             {streaming ? <span aria-hidden="true" className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/70 align-middle" /> : null}
           </div>
         ) : null}

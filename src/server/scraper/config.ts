@@ -1,3 +1,5 @@
+import { DEFAULT_SOURCE_URL } from "@/lib/docs-source";
+
 export type RenderMode = "static" | "auto" | "browser";
 
 export interface ScraperConfig {
@@ -26,7 +28,7 @@ export interface ScraperConfig {
   minContentLength: number;
 }
 
-export const DEFAULT_START_URL = "https://dash.gtps.cloud/docs";
+export const DEFAULT_START_URL = DEFAULT_SOURCE_URL;
 
 export const DEFAULT_USER_AGENT =
   "GTPSAssistantBot/0.1 (+https://github.com/kangrebahancuy-cmyk/gtps-assis)";

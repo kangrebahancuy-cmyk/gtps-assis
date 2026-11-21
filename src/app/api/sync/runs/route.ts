@@ -1,9 +1,7 @@
-import { NextResponse } from "next/server";
-import { startBackgroundServices } from "@/server/sync/runtime";
+import { handleSyncRuns } from "@/server/sync/api";
+import { getSyncApiDeps } from "@/server/sync/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return NextResponse.json({ runs: startBackgroundServices().repo.listRuns(20) });
-}
+export const GET = (request: Request) => handleSyncRuns(getSyncApiDeps())(request);

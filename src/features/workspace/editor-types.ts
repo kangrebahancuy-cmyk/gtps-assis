@@ -33,5 +33,7 @@ export interface EditorProps {
   onReady(handle: EditorHandle | null): void;
   onSelection(selection: EditorSelection): void;
   problems: readonly SyntaxProblem[];
-  theme: "dark" | "light";
+  theme: "dark" | "light" | "high-contrast";
+  /** Pixels. Defaults to 13. */
+  fontSize?: number;
 }

@@ -47,7 +47,7 @@ npm run start      # serve the production build
 | Composer | Multiline input, Enter/Shift+Enter, Stop, example prompts | - |
 | Documentation | Explorer over the indexed GTPS Cloud docs: hierarchy, FTS5 search, Markdown viewer, status | Content appears only after a sync has been run |
 | Lua Workspace | Monaco editor (basic-editor fallback), file tabs, create/rename/delete/import/export, IndexedDB storage, syntax check, documentation check, AI assistant (explain, fix, optimize, comment, refactor, modify, generate) | Real Monaco and real GTPS runtime were never tested here; scripts are never executed |
-| Settings | Theme switch, local data size and clearing, AI providers (Gemini, Groq), model discovery and default model, chat history export/import/clear | Sync preferences |
+| Settings | All sections work (Step 10): AI providers and default model, documentation source and approved domains, synchronization (full, incremental, retry, logs, schedule), chat preferences and history, appearance and editor, backup and restore, local data clearing | Real Radix/Monaco and the real dash.gtps.cloud were never run here (see Step 10 limits) |
 
 The documentation explorer shows nothing until a synchronization has been run:
 there are no sample pages any more.
@@ -636,6 +636,79 @@ They work on the **selection** when there is one, otherwise the whole file (the 
 - `.tsx` files cannot be type-checked here (`@types/react` is missing); `.ts` files are.
 - Draft saving happens 400 ms after typing stops; a reload within that window can lose the last keystrokes.
 
+## Settings and local data (Step 10)
+
+Every section under **Settings** is now functional (no placeholders are left).
+
+| Section | What it does |
+| --- | --- |
+| AI Providers / Models | Gemini and Groq keys (write-only: the browser only ever learns "configured" and the last 4 characters), status, connection test, model refresh, default provider and model |
+| Documentation | Source URL and main website URL, "Restore defaults", approved domains, additional allowed domains |
+| Synchronization | Full and incremental sync, pause/resume/cancel, retry failed documents, automatic sync toggle and interval, run history and scraper logs (filter by run and level) |
+| Chat | Default provider and model (the same stored default as Models), Markdown rendering, Lua highlighting, code wrapping, list/delete/export/import/clear chats |
+| Appearance | Dark/light, text size, sidebar collapsed, recent chats in the sidebar, editor theme (match app, dark, light, high contrast), editor font size 10-24, reset to defaults |
+| Backup & Restore | Download everything, validate a backup file, see a plan before anything changes, merge or replace, confirmations |
+| Local Data | Sizes of what is stored here and clearing it (also resets preferences) |
+
+### Approved documentation domains
+
+The scraper may only be pointed at `gtps.cloud` and its subdomains (never look-alikes such as `evilgtps.cloud`), over
+`https` (plain `http` only for `localhost`), without credentials in the URL. The check runs on the server
+(`src/lib/docs-source.ts`, `src/server/docs-source/store.ts`); the settings page only explains it. Another host is
+accepted only after the local user adds it under **Additional allowed domains** and confirms. Changing the source
+when documents are already indexed needs a second confirmation, and nothing is deleted: the old pages stay in the
+index, and the crawler leaves queued URLs of the previous source untouched (it logs how many). The source cannot be
+changed while a synchronization is open.
+Extra domains, the source URL and the index are stored in the local SQLite file and are **not** part of backups.
+
+### Backup and restore
+
+`gtps-assistant-backup` v1 is one JSON file: chats (all messages, plus the "use documentation" switch), Lua
+workspace files (saved text **and** unsaved drafts), open tabs, the workspace's AI model choice, and preferences.
+It carries counts and a SHA-256 checksum over the data. **Never included:** API keys, the documentation index,
+documentation source and extra domains.
+
+- **Validation** (before anything is read into the app): size limit, JSON, format name, version (newer versions are
+  refused), structure, checksum. Damaged, edited, truncated, foreign and chat-only files are refused with the reason.
+  The checksum detects accidental damage and hand edits; it is **not a signature**, so it does not prove who made the file.
+- **Plan first:** after choosing a file the page shows, per category, how many items would be added, are already
+  identical (skipped) and differ, and how many of yours would be deleted. Nothing is changed by looking.
+- **Merge** (default) never deletes. When an item exists in both but differs: *keep both* (default, the backup's
+  copy is added next to yours; importing the same file again adds nothing), *keep mine*, or *replace mine*.
+- **Replace everything** makes this browser match the backup.
+- **Confirmation:** a merge that only adds needs one confirmation. Anything that deletes or overwrites (replace mine,
+  replace everything, restoring preferences that differ from the current ones) needs a second one: an
+  "I understand" checkbox, and a safety download of the current data (on by default).
+- **Failure:** if a write fails half-way, chats and files are put back as they were.
+- Restoring closes the chat that is open if it was replaced.
+
+### Preferences
+
+Stored in `localStorage` (`gtps-assistant:prefs`, versioned). Damaged values fall back to defaults field by field;
+the earlier theme setting is migrated. Several tabs stay in sync through the `storage` event.
+
+### Tests
+
+- `tests/docs-source.test.ts` (24): domain rules (look-alikes, subdomains, schemes, credentials, loopback), the API
+  over a fake documentation site (save, confirmation on change, busy, add/remove domain, start refused when the
+  source is no longer approved), crawler skipping old-source URLs.
+- `tests/preferences.test.ts` (12) and `tests/backup.test.ts` (21): parsing/migration, backup format and
+  validation, restore plan, merge/replace semantics, repeat restore, rollback on failure, workspace read while loading.
+- `tests/browser/settings.browser.ts` (35): real Chromium with the real panels and sidebar, real backend over HTTP
+  with scripted providers and a fake docs site: providers, documentation, synchronization, chat, appearance
+  (dark/light, sidebar, editor theme and font in the editor, clamping, reload), backup (export contents, rejected
+  files, restore into a second fresh browser profile, merge, keep mine, replace, safety download) and local data.
+
+### Verified and not verified
+
+- Real Radix switches were not run (not installed): the Chromium tests use a small stand-in that has the same
+  `role="switch"`/`aria-checked` behaviour. `zustand` and Monaco are stubbed as in earlier steps, and Tailwind could
+  not be built, so how the settings pages **look** was not verified.
+- The synchronization settings were exercised against a fake documentation site with synthetic pages, **not**
+  against the real `dash.gtps.cloud`.
+- `.tsx` panels have no separate server-render tests; they are covered through the Chromium suite.
+- The checksum is not authentication; a backup is plain text you should keep private (it contains your chats and code).
+
 ## Project structure
 
 ```
@@ -649,9 +722,10 @@ src/
   lib/            Constants, navigation helpers, markdown parser, Lua highlighter, utilities
     chat/         Chat engine: controller, IndexedDB/memory repositories, context, search, export
     workspace/    Lua workspace engine: files, controller, IndexedDB/memory repositories, AI tasks, diff, find
+    backup/       Backup format, validation, restore plan and service
   server/         Scraper, sync service + scheduler, SQLite layer, docs explorer, AI providers/service (server only)
   services/       Browser storage and scraper API client
-  store/          Zustand stores (ui)
+  store/          Preferences store hooks; transient UI state (zustand)
   types/          Shared TypeScript types
 ```
 
@@ -659,7 +733,7 @@ src/
 
 - The Monaco editor loads its assets from a CDN at runtime; without internet access the workspace uses its basic
   editor (no syntax colouring).
-- Settings and theme are stored in `localStorage`; chat history and Lua workspace files are in IndexedDB. Use
+- Preferences are stored in `localStorage`; chat history and Lua workspace files are in IndexedDB. Use
   **Settings → Local Data** to clear everything.
 - Fonts use the system font stack, so builds do not depend on external font
   downloads.
@@ -675,3 +749,4 @@ src/
 7. **Step 7:** documentation-aware answers (retrieval, citations, context indicator).
 8. **Step 8:** Lua script generator (documentation workflow, script check, actions).
 9. **Step 9:** Lua workspace (Monaco editor, files in IndexedDB, AI assistant with documentation retrieval).
+10. **Step 10:** settings and local data management (provider, documentation, chat, appearance, backup and restore).

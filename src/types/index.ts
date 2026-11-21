@@ -1,4 +1,4 @@
-export type ThemeMode = "dark" | "light";
+export type { ThemeMode } from "@/lib/preferences";
 
 export interface NavItem {
   id: string;
@@ -18,6 +18,7 @@ export type SettingsSectionId =
   | "synchronization"
   | "chat"
   | "local-data"
+  | "backup"
   | "appearance";
 
 export interface SettingsSection {

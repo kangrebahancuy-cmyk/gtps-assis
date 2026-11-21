@@ -34,17 +34,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: "documentation",
     label: "Documentation",
-    description: "Manage documentation sources and indexing.",
+    description: "Choose where the documentation is read from and which sites are allowed.",
   },
   {
     id: "synchronization",
     label: "Synchronization",
-    description: "Keep documentation and settings up to date.",
+    description: "Run, schedule and review documentation synchronization.",
   },
   {
     id: "chat",
     label: "Chat Preferences",
-    description: "Tune how conversations behave and look.",
+    description: "Default model, reply display and chat history.",
   },
   {
     id: "local-data",
@@ -52,9 +52,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: "Review and clear data stored in this browser.",
   },
   {
+    id: "backup",
+    label: "Backup & Restore",
+    description: "Export everything you created here, or restore it from a backup file.",
+  },
+  {
     id: "appearance",
     label: "Appearance",
-    description: "Switch between dark and light mode.",
+    description: "Theme, text size, sidebar and code editor.",
   },
 ];
 

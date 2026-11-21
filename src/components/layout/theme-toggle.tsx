@@ -3,11 +3,11 @@
 import { Moon, Sun } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useUiStore } from "@/store/ui-store";
+import { setPreferences, usePreferences } from "@/store/preferences-store";
 
 export function ThemeToggle() {
-  const theme = useUiStore((state) => state.theme);
-  const setTheme = useUiStore((state) => state.setTheme);
+  const { theme } = usePreferences();
+  const setTheme = (next: "dark" | "light") => setPreferences({ theme: next });
   const next = theme === "dark" ? "light" : "dark";
 
   return (
