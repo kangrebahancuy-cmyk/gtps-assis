@@ -25,6 +25,7 @@ export type AiErrorKind =
   | "timeout"
   | "cancelled"
   | "invalid_input"
+  | "backend_unavailable"
   | "unknown";
 
 /** A provider/network/input error that is safe to show: it never contains a key. */

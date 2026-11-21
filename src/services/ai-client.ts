@@ -40,7 +40,7 @@ const info = (kind: AiErrorKind, message: string, status: number | null = null, 
 
 const KINDS: readonly string[] = [
   "not_configured", "invalid_key", "permission_denied", "rate_limited", "model_not_found", "bad_request", "content_blocked",
-  "provider_unavailable", "network", "timeout", "cancelled", "invalid_input", "unknown",
+  "provider_unavailable", "network", "timeout", "cancelled", "invalid_input", "backend_unavailable", "unknown",
 ];
 
 /** Accepts only a well-formed error object from the server; anything else is treated as unknown. */

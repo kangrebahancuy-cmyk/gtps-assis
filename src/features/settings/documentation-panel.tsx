@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { DocsSourceView } from "@/lib/docs-source";
+import { BACKEND_UNAVAILABLE } from "@/lib/hosting";
 import { BackendUnreachableError, SyncApiError, syncClient } from "@/services/sync-client";
 
 type Notice = { tone: "ok" | "error"; text: string } | null;
@@ -34,16 +35,31 @@ export function DocumentationPanel() {
     setWebsite(next.settings.websiteUrl);
   }, []);
 
-  useEffect(() => {
-    mounted.current = true;
+  const [loadCode, setLoadCode] = useState<string | null>(null);
+  const reload = useCallback(() => {
+    setNotice(null);
+    setUnreachable(false);
+    setLoadCode(null);
     syncClient.getDocsSource().then(
       (next) => mounted.current && apply(next),
-      (error: unknown) => mounted.current && (error instanceof BackendUnreachableError ? setUnreachable(true) : setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not load the settings." })),
+      (error: unknown) => {
+        if (!mounted.current) return;
+        if (error instanceof BackendUnreachableError) setUnreachable(true);
+        else {
+          setLoadCode(error instanceof SyncApiError ? error.code : null);
+          setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not load the settings." });
+        }
+      },
     );
+  }, [apply]);
+
+  useEffect(() => {
+    mounted.current = true;
+    reload();
     return () => {
       mounted.current = false;
     };
-  }, [apply]);
+  }, [reload]);
 
   async function save(confirmed = false, patch = { sourceUrl: source, websiteUrl: website }) {
     setBusy(true);
@@ -77,6 +93,21 @@ export function DocumentationPanel() {
   }
 
   if (unreachable) return <Card><CardContent className="p-5 text-sm text-muted-foreground">Can&apos;t reach the local backend. Make sure the app is running and reload this page.</CardContent></Card>;
+  if (!view && notice) {
+    return (
+      <Card>
+        <CardContent className="space-y-3 p-5" data-testid="docs-source-error">
+          <p className="text-sm font-medium">{loadCode === BACKEND_UNAVAILABLE ? "No local backend on this host" : "Couldn't load the documentation settings"}</p>
+          <p role="alert" className="text-sm text-muted-foreground">{notice.text}</p>
+          {loadCode === BACKEND_UNAVAILABLE ? null : (
+            <Button variant="outline" size="sm" onClick={reload}>
+              Try again
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
   if (!view) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const dirty = source !== view.settings.sourceUrl || website !== view.settings.websiteUrl;

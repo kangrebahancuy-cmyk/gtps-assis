@@ -24,6 +24,7 @@ const STATUS: Record<AiErrorKind, number> = {
   provider_unavailable: 502,
   network: 502,
   timeout: 504,
+  backend_unavailable: 503,
   unknown: 500,
 };
 

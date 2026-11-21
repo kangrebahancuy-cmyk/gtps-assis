@@ -62,7 +62,7 @@ export function SynchronizationPanel() {
                 <p role="alert" className="text-sm text-red-500">Last run {status.lastRun.status.replace(/_/g, " ")}: {status.lastRun.error}</p>
               ) : null}
             </>
-          ) : !unreachable ? (
+          ) : !unreachable && !error ? (
             <p className="text-sm text-muted-foreground">Loading status…</p>
           ) : null}
         </CardContent>
