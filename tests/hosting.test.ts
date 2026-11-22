@@ -15,18 +15,18 @@ const req = (path: string, init: RequestInit & { host?: string } = {}): Request 
   const { host = "localhost:3000", headers, ...rest } = init;
   return new Request(`http://${host}${path}`, { ...rest, headers: { host, ...(headers as Record<string, string> | undefined) } });
 };
-const VERCEL = { VERCEL: "1" } as NodeJS.ProcessEnv;
-const LOCAL = {} as NodeJS.ProcessEnv;
+const VERCEL = { VERCEL: "1" };
+const LOCAL = {};
 
 describe("hosted environments", () => {
   it("recognises hosting services from their own environment variables and ignores empty or false values", () => {
-    assert.equal(hostedPlatform({ VERCEL: "1" } as NodeJS.ProcessEnv), "Vercel");
-    assert.equal(hostedPlatform({ NETLIFY: "true" } as NodeJS.ProcessEnv), "Netlify");
-    assert.equal(hostedPlatform({ AWS_LAMBDA_FUNCTION_NAME: "fn" } as NodeJS.ProcessEnv), "AWS Lambda");
-    assert.equal(hostedPlatform({ GTPS_HOSTED: "1" } as NodeJS.ProcessEnv), "a hosting service");
-    assert.equal(hostedPlatform({ VERCEL: "" } as NodeJS.ProcessEnv), null);
-    assert.equal(hostedPlatform({ GTPS_HOSTED: "0" } as NodeJS.ProcessEnv), null);
-    assert.equal(hostedPlatform({ GTPS_HOSTED: "false" } as NodeJS.ProcessEnv), null);
+    assert.equal(hostedPlatform({ VERCEL: "1" }), "Vercel");
+    assert.equal(hostedPlatform({ NETLIFY: "true" }), "Netlify");
+    assert.equal(hostedPlatform({ AWS_LAMBDA_FUNCTION_NAME: "fn" }), "AWS Lambda");
+    assert.equal(hostedPlatform({ GTPS_HOSTED: "1" }), "a hosting service");
+    assert.equal(hostedPlatform({ VERCEL: "" }), null);
+    assert.equal(hostedPlatform({ GTPS_HOSTED: "0" }), null);
+    assert.equal(hostedPlatform({ GTPS_HOSTED: "false" }), null);
     assert.equal(hostedPlatform(LOCAL), null);
   });
 
