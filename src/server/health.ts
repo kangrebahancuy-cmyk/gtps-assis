@@ -1,9 +1,11 @@
-import { hostedPlatform, protectedRoute } from "@/server/hosting";
+import { accessPassword } from "@/server/access";
+import { protectedRoute } from "@/server/hosting";
+import { hostedPlatform } from "@/server/platform";
 import type { Db } from "@/server/db/database";
 
 export interface Health {
   ok: boolean;
-  /** "local": the backend runs here; "hosted": a hosting service that cannot run it. */
+  /** "local": the backend runs on this computer; "hosted": a hosting service (the backend needs the access password). */
   mode: "local" | "hosted";
   backend: boolean;
   platform: string | null;
@@ -31,7 +33,7 @@ export function handleHealth(deps: HealthDeps) {
   return async (request: Request): Promise<Response> => {
     const platform = hostedPlatform(env);
     if (platform !== null) {
-      const body: Health = { ok: true, mode: "hosted", backend: false, platform, node };
+      const body: Health = { ok: true, mode: "hosted", backend: accessPassword(env) !== null, platform, node };
       return Response.json(body, { headers: { "cache-control": "no-store" } });
     }
     return local(request);

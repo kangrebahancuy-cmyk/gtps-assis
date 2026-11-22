@@ -1,6 +1,8 @@
+import { accessPassword, hasValidSession } from "@/server/access";
 import { assertLocalRequest } from "@/server/ai/guard";
+import { hostedPlatform } from "@/server/platform";
 import { AiError, redactSecrets } from "@/server/ai/errors";
-import { BACKEND_UNAVAILABLE, HOSTED_MESSAGE, STORAGE_MESSAGE, STORAGE_UNAVAILABLE } from "@/lib/hosting";
+import { AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE, BACKEND_UNAVAILABLE, HOSTED_NEEDS_PASSWORD, STORAGE_MESSAGE, STORAGE_UNAVAILABLE } from "@/lib/hosting";
 
 /**
  * The backend keeps API keys, a SQLite file and a background scheduler, so it is meant to run as one long-lived
@@ -8,22 +10,7 @@ import { BACKEND_UNAVAILABLE, HOSTED_MESSAGE, STORAGE_MESSAGE, STORAGE_UNAVAILAB
  * anyone could call) cannot host it safely, so on those the API answers "unavailable" instead of crashing.
  */
 
-const HOST_MARKERS: readonly [string, string][] = [
-  ["VERCEL", "Vercel"],
-  ["NETLIFY", "Netlify"],
-  ["AWS_LAMBDA_FUNCTION_NAME", "AWS Lambda"],
-  ["K_SERVICE", "Cloud Run"],
-  ["GTPS_HOSTED", "a hosting service"],
-];
-
-/** The name of the hosting platform when this process runs on one, otherwise null. */
-export function hostedPlatform(env: Record<string, string | undefined> = process.env): string | null {
-  for (const [name, label] of HOST_MARKERS) {
-    const value = env[name];
-    if (value !== undefined && value !== "" && value !== "0" && value.toLowerCase() !== "false") return label;
-  }
-  return null;
-}
+export { hostedPlatform };
 
 /** The JSON shape depends on the client: /api/ai and /api/lua use { error: {kind,…} }, the rest { error: string, code }. */
 function usesAiErrorShape(pathname: string): boolean {
@@ -43,7 +30,11 @@ export function errorResponse(request: Request, status: number, code: string, me
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
-/** Answers every /api request except /api/health on a hosting service; undefined means "carry on". */
+/**
+ * On a hosting service the backend works only for a visitor who entered GTPS_ACCESS_PASSWORD. Without that variable
+ * it stays locked (503), because the address is public and the backend can spend the owner's provider keys.
+ * /api/health and /api/auth/* are always reachable. undefined means "carry on".
+ */
 export function hostedApiResponse(request: Request, env: Record<string, string | undefined> = process.env): Response | undefined {
   if (hostedPlatform(env) === null) return undefined;
   let pathname: string;
@@ -52,11 +43,13 @@ export function hostedApiResponse(request: Request, env: Record<string, string |
   } catch {
     return undefined;
   }
-  if (!pathname.startsWith("/api/") || pathname === "/api/health") return undefined;
-  return errorResponse(request, 503, BACKEND_UNAVAILABLE, HOSTED_MESSAGE);
+  if (!pathname.startsWith("/api/") || pathname === "/api/health" || pathname.startsWith("/api/auth/")) return undefined;
+  const password = accessPassword(env);
+  if (password === null) return errorResponse(request, 503, BACKEND_UNAVAILABLE, HOSTED_NEEDS_PASSWORD);
+  if (hasValidSession(request, password)) return undefined;
+  return errorResponse(request, 401, AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE);
 }
 
-/** Errors from opening the database or the data folder. They say what failed without exposing paths. */
 export function isStorageFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = (error as { code?: unknown }).code;

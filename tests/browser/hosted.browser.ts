@@ -1,7 +1,7 @@
 /**
  * What a person sees when the interface is served by a host that cannot run the backend (the Vercel case): the
  * real settings panels in real Chromium, in front of the REAL hosting guard (src/server/hosting.ts) answering
- * every /api call with 503, exactly as the middleware does there. Also the "database cannot be opened" case.
+ * every /api call with 503 (no access password) or 401 (password not entered), exactly as the route guard does there. Also the "database cannot be opened" case.
  *
  * The same stand-ins as settings.browser.ts apply (radix switch stub, no Tailwind). This does not run Next.js or
  * Vercel: it proves the browser side and the guard's answers, not that a Vercel deployment behaves this way.
@@ -20,7 +20,7 @@ let site: TestSite;
 let browser: Browser;
 let context: BrowserContext;
 let page: Page;
-let mode: "hosted" | "storage-broken" | "storage-fixed" = "hosted";
+let mode: "hosted" | "locked" | "storage-broken" | "storage-fixed" = "hosted";
 const calls: string[] = [];
 const errors: string[] = [];
 
@@ -43,6 +43,7 @@ before(async () => {
         const request = new Request(`http://${req.headers.host}${req.url}`, { method: req.method });
         let response: Response;
         if (mode === "hosted") response = hostedApiResponse(request, { VERCEL: "1" }) ?? Response.json({}, { status: 404 });
+        else if (mode === "locked") response = hostedApiResponse(request, { VERCEL: "1", GTPS_ACCESS_PASSWORD: "correct horse battery" }) ?? Response.json({}, { status: 404 });
         else if (mode === "storage-broken") response = errorResponse(request, 503, "storage_unavailable", STORAGE_MESSAGE);
         else response = Response.json(VIEW);
         res.writeHead(response.status, { "content-type": "application/json" });
@@ -83,27 +84,34 @@ describe("a host without the backend", () => {
   it("AI Providers and Models say there is no local backend and why, never 'HTTP 500'", async () => {
     for (const id of ["providers", "models"]) {
       await open(id);
-      await page.getByText("No local backend on this host").waitFor();
+      await page.getByText("The backend is locked on this host").waitFor();
       const text = await bodyText();
-      assert.match(text, /runs on your own computer/);
-      assert.match(text, /Chats, the Lua workspace, preferences and backups still work here/);
+      assert.match(text, /GTPS_ACCESS_PASSWORD/);
+      assert.match(text, /only the browser features work/);
       assert.doesNotMatch(text, /HTTP 5\d\d/);
     }
+  });
+
+  it("with a password set but not entered, AI Providers asks for it instead of showing 'HTTP 401'", async () => {
+    mode = "locked";
+    await open("providers");
+    await page.getByText(/Enter the access password/).first().waitFor();
+    assert.doesNotMatch(await bodyText(), /HTTP 4\d\d/);
   });
 
   it("Documentation shows the explanation instead of 'Loading…' forever, with no useless retry button", async () => {
     await open("documentation");
     await page.getByTestId("docs-source-error").waitFor();
     const text = await page.getByTestId("docs-source-error").innerText();
-    assert.match(text, /No local backend on this host/);
-    assert.match(text, /no local backend/);
+    assert.match(text, /The backend is locked on this host/);
+    assert.match(text, /GTPS_ACCESS_PASSWORD/);
     assert.equal(await page.getByRole("button", { name: "Try again" }).count(), 0);
     assert.doesNotMatch(await bodyText(), /Loading…/);
   });
 
   it("Synchronization shows the explanation and leaves the buttons, not an endless 'Loading status…'", async () => {
     await open("synchronization");
-    await page.getByText(/no local backend/).first().waitFor();
+    await page.getByText(/GTPS_ACCESS_PASSWORD/).first().waitFor();
     assert.doesNotMatch(await bodyText(), /Loading status…/);
     assert.doesNotMatch(await bodyText(), /HTTP 5\d\d/);
   });
@@ -111,7 +119,7 @@ describe("a host without the backend", () => {
   it("Chat preferences: the default-model card explains, and the browser-side preferences still work", async () => {
     await open("chat");
     await page.getByTestId("chat-ai-unavailable").waitFor();
-    assert.match(await page.getByTestId("chat-ai-unavailable").innerText(), /No local backend on this host/);
+    assert.match(await page.getByTestId("chat-ai-unavailable").innerText(), /The backend is locked on this host/);
     const render = page.getByRole("switch", { name: "Render Markdown" });
     assert.equal(await render.getAttribute("aria-checked"), "true");
     await render.click();

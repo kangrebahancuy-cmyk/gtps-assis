@@ -66,7 +66,8 @@ All are optional. Copy `.env.example` to `.env.local`. Never commit real keys (`
 | `GTPS_AI_CONFIG_PATH` | Where saved keys and the default provider/model are stored | `data/ai-config.json` |
 | `GTPS_DB_PATH` | SQLite file of the documentation index | `data/gtps-assistant.db` |
 | `GTPS_ALLOWED_HOSTS` | Extra host names allowed to call the local API (comma separated). `localhost`, `127.0.0.1`, `[::1]` are always allowed | none |
-| `GTPS_HOSTED` | Set to `1` to force "hosted mode" (backend disabled). It is also detected automatically on Vercel, Netlify, AWS Lambda and Cloud Run | unset |
+| `GTPS_ACCESS_PASSWORD` | Hosted deployments only: password that unlocks the backend (min. 8 characters). Without it the backend stays locked | unset |
+| `GTPS_HOSTED` | Set to `1` to force "hosted mode" (password-protected backend, files in `/tmp`). Detected automatically on Vercel, Netlify, AWS Lambda and Cloud Run | unset |
 
 ## API provider setup
 
@@ -88,19 +89,41 @@ All are optional. Copy `.env.example` to `.env.local`. Never commit real keys (`
 - Client-rendered pages need Chromium (`npx playwright install chromium`); without it the scraper uses plain HTTP and
   reports the pages it could not render.
 
-## Hosted deployments (Vercel and similar)
+## Deploying to Vercel (and similar hosts)
 
-The backend is local by design. On a host (Vercel, Netlify, Lambda, Cloud Run, or `GTPS_HOSTED=1`) every `/api/*`
-route except `/api/health` answers **503** `{"code":"backend_unavailable"}` and the pages explain that instead of
-showing "HTTP 500". What still works there, in the browser only: chats history, the Lua workspace, preferences,
-backup/restore. What does **not** work there: AI providers, synchronization, documentation search and the script
-check. For all of those, run the app locally as shown above. `GET /api/health` reports the mode and database state.
+The backend also runs on a serverless host, with these differences from running locally. Read them before relying on it.
+
+1. In the Vercel project: **Settings -> Environment Variables**, add
+   - `GTPS_ACCESS_PASSWORD` (**required**, at least 8 characters). The address is public and the backend can spend your
+     provider keys, so until this is set every backend route answers 503 and only the browser features work.
+   - `GEMINI_API_KEY` and/or `GROQ_API_KEY`. Keys cannot be typed into Settings on a host (the disk there is
+     temporary); the page says so.
+2. Redeploy, open the site and use the banner at the top: enter the password (a 14-day, HttpOnly, SameSite=Strict
+   cookie; five wrong passwords lock a client out for ten minutes).
+3. **Settings -> Synchronization -> Sync now**.
+
+What is different on a host (all verified by tests except where noted):
+
+| Topic | Behaviour |
+| --- | --- |
+| Storage | The documentation index is a SQLite file in `/tmp`. It is **temporary and per instance**: Vercel may recycle the instance, and then the index is empty again and must be re-synced. Chats, Lua files and preferences are in your browser and are not affected. |
+| Sync | Runs inside one request (max 60 s): 250 ms between requests, HTTP only (no Chromium), stops at 45 s and says "Stopped at the time limit". Press **Sync now** again to continue where it stopped. There is no scheduler and no automatic sync. A large documentation site may need several presses. |
+| Status | The progress shown while a sync runs lives in one instance. If the next request lands on another instance the page can show "idle" although a sync is still running. |
+| Keys | Only from environment variables; never sent to the browser. |
+| Not verified | An actual Vercel deployment: this sandbox has no network, so the behaviour on Vercel (cookies, `/tmp`, `after()`, 60 s limit, `node:sqlite` on the Vercel Node runtime) is covered by tests of the code, not by a real deployment. |
+
+If you need a durable, shared index or unattended scheduled syncs, run the app locally (or on a server of your own with
+a persistent disk, where `GTPS_HOSTED` is not set and the app behaves exactly as locally).
+
+`GET /api/health` reports the mode; on a host `backend` is `true` only when the access password is configured.
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| Settings pages show "backend unavailable" | You opened a hosted copy. Run locally (see "Running locally"). |
+| Settings pages say "The backend is locked on this host" | Hosted copy: set `GTPS_ACCESS_PASSWORD` (and provider keys) in the host's environment variables, redeploy, then unlock with the banner. Or run locally. |
+| "Enter the access password" | Use the banner at the top of the page. |
+| Documentation is empty again on Vercel | `/tmp` was recycled. Press Sync now (repeat until the time-limit message disappears). |
 | "The local backend could not open its database" (503 `storage_unavailable`) | The data folder is not writable or the file is damaged. Set `GTPS_DB_PATH` to a writable path, or delete the damaged file (it is rebuilt by the next sync). |
 | `node:sqlite` not found | Node.js is older than 22.13. Upgrade Node. |
 | "Invalid API key" | Re-enter the key in Settings -> AI Providers and press Test. |
@@ -810,9 +833,9 @@ that sandbox could not do.
 
 ### Fixed during the audit
 
-- **HTTP 500 on a hosted copy (Vercel)**: the app starts SQLite and a scheduler at boot, which cannot work on a
-  read-only serverless disk. On a host the backend is now disabled cleanly (503 `backend_unavailable`, explained in
-  the UI); `/api/health` reports the mode. Every API route goes through `protectedRoute()`.
+- **HTTP 500 on a hosted copy (Vercel)**: the app started SQLite and a scheduler at boot, which crashed on a
+  read-only serverless disk. Now no work happens at boot on a host, files go to `/tmp`, the backend is behind an access
+  password, and every API route goes through `protectedRoute()` (JSON errors, never an empty 500).
 - **SSRF**: redirects used to be followed without re-checking the target. Now each hop is validated against the
   approved domains (https only, no private/loopback hosts), at most 5 hops, 5 MiB per page, `robots.txt` only via
   same-origin redirects; the Chromium renderer is confined the same way (a redirect to an unapproved host is never
@@ -877,7 +900,7 @@ Real-network scraping speed is limited by the polite delay (1 request/second), n
 
 ### Known limitations
 
-- Hosted deployments only serve the browser-side features (see "Hosted deployments").
+- Hosted deployments keep the index in temporary storage (see "Deploying to Vercel").
 - Large chat histories are loaded into memory for search and are not virtualized.
 - Single-user, single-machine design: no accounts, no multi-user access control.
 

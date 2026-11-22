@@ -22,8 +22,10 @@ export interface CrawlSummary {
   cancelled: boolean;
   /** Set when the run could not start at all (e.g. robots.txt unreadable). */
   aborted: string | null;
-  /** True when the maxPages safety limit left URLs unprocessed. */
+  /** True when a limit (pages or time) left URLs unprocessed. */
   truncated: boolean;
+  /** Which limit stopped the run, when truncated. */
+  stopReason?: "page-limit" | "time-limit";
   counts: ChangeCounts;
   /** URLs seen for the first time during this run. */
   discovered: number;
@@ -127,8 +129,12 @@ export class Crawler {
     const start = normalizeUrl(config.startUrl);
     if (!start) throw new Error(`Invalid start URL: ${config.startUrl}`);
 
+    const unfinished = mode === "incremental" && config.resumeUnfinished === true ? repo.listUrlsByStatus("pending").filter((u) => isDocumentationUrl(u, config)).length : 0;
     if (mode === "retry") {
       repo.requeueForSync("retry");
+    } else if (unfinished > 0) {
+      repo.discoverUrl(start, null);
+      log("info", `Continuing an unfinished run: ${unfinished} page(s) were still waiting`);
     } else {
       repo.discoverUrl(start, null);
       repo.requeueForSync(mode);
@@ -148,6 +154,7 @@ export class Crawler {
     const seen = new Set<string>(queue);
     const parents = new Map<string, string | null>([[start, null]]);
     let processed = 0;
+    const startedAt = Date.now();
 
     const emit = (currentUrl: string | null) =>
       this.deps.onProgress?.({
@@ -162,8 +169,15 @@ export class Crawler {
       emit(null);
       await control?.waitIfPaused(signal);
       if (signal?.aborted) { summary.cancelled = true; break; }
+      if (config.deadlineMs && Date.now() - startedAt > config.deadlineMs) {
+        summary.truncated = true;
+        summary.stopReason = "time-limit";
+        log("warn", `Stopped at this host's time limit (${Math.round(config.deadlineMs / 1000)} s); ${queue.length} page(s) are still waiting. Run the sync again to continue.`);
+        break;
+      }
       if (processed >= config.maxPages) {
         summary.truncated = true;
+        summary.stopReason = "page-limit";
         log("warn", `Stopped at the maxPages safety limit (${config.maxPages}); ${queue.length} URL(s) left unprocessed`);
         break;
       }

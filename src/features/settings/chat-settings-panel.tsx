@@ -31,7 +31,7 @@ function DefaultModelCard() {
     return (
       <Card>
         <CardContent className="space-y-1 p-5" data-testid="chat-ai-unavailable">
-          <p className="text-sm font-medium">{ai.loadError?.kind === "backend_unavailable" ? "No local backend on this host" : "Couldn't load the AI settings"}</p>
+          <p className="text-sm font-medium">{ai.loadError?.kind === "backend_unavailable" ? "The backend is locked on this host" : "Couldn't load the AI settings"}</p>
           <p className="text-sm text-muted-foreground">{ai.loadError?.message ?? "The AI settings could not be loaded."}</p>
         </CardContent>
       </Card>

@@ -66,8 +66,8 @@ describe("keys never reach the browser", () => {
     const offenders: string[] = [];
     for (const file of sources) {
       const path = rel(file);
-      // instrumentation.ts and middleware.ts are server-only entry points (Next never bundles them for the browser).
-      const isServerSide = path.startsWith("src/server/") || /^src\/app\/api\//.test(path) || path === "src/instrumentation.ts" || path === "src/middleware.ts";
+      // instrumentation.ts is a server-only entry point (Next never bundles it for the browser).
+      const isServerSide = path.startsWith("src/server/") || /^src\/app\/api\//.test(path) || path === "src/instrumentation.ts";
       if (isServerSide) continue;
       const text = readFileSync(file, "utf8");
       if (/from\s+["']@\/server\//.test(text) || /from\s+["'](?:\.\.?\/)+server\//.test(text) || /import\(\s*["']@\/server\//.test(text)) offenders.push(path);

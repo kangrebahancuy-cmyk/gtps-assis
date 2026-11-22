@@ -1,4 +1,5 @@
 import { DEFAULT_SOURCE_URL } from "@/lib/docs-source";
+import { hostedPlatform } from "@/server/platform";
 
 export type RenderMode = "static" | "auto" | "browser";
 
@@ -26,6 +27,10 @@ export interface ScraperConfig {
   renderMode: RenderMode;
   /** Pages whose cleaned text is shorter than this are treated as empty. */
   minContentLength: number;
+  /** Stop the run after this many milliseconds (serverless functions have a time limit); null = no limit. */
+  deadlineMs?: number | null;
+  /** An incremental run first finishes the pages an earlier, cut-off run left pending instead of starting over. */
+  resumeUnfinished?: boolean;
 }
 
 export const DEFAULT_START_URL = DEFAULT_SOURCE_URL;
@@ -56,10 +61,11 @@ export function createConfig(
 
 /** Where the SQLite database lives. Override with GTPS_DB_PATH. */
 export function getDatabasePath(): string {
-  return process.env.GTPS_DB_PATH ?? "data/gtps-assistant.db";
+  // A serverless host only lets /tmp be written; it is temporary (it can disappear when the instance is recycled).
+  return process.env.GTPS_DB_PATH ?? (hostedPlatform() ? "/tmp/gtps-assistant.db" : "data/gtps-assistant.db");
 }
 
 /** Where AI provider keys and defaults are stored (local file, gitignored). Override with GTPS_AI_CONFIG_PATH. */
 export function getAiConfigPath(): string {
-  return process.env.GTPS_AI_CONFIG_PATH ?? "data/ai-config.json";
+  return process.env.GTPS_AI_CONFIG_PATH ?? (hostedPlatform() ? "/tmp/gtps-ai-config.json" : "data/ai-config.json");
 }

@@ -97,7 +97,7 @@ export function DocumentationPanel() {
     return (
       <Card>
         <CardContent className="space-y-3 p-5" data-testid="docs-source-error">
-          <p className="text-sm font-medium">{loadCode === BACKEND_UNAVAILABLE ? "No local backend on this host" : "Couldn't load the documentation settings"}</p>
+          <p className="text-sm font-medium">{loadCode === BACKEND_UNAVAILABLE ? "The backend is locked on this host" : "Couldn't load the documentation settings"}</p>
           <p role="alert" className="text-sm text-muted-foreground">{notice.text}</p>
           {loadCode === BACKEND_UNAVAILABLE ? null : (
             <Button variant="outline" size="sm" onClick={reload}>

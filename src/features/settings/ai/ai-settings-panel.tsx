@@ -13,7 +13,7 @@ function Unavailable({ state }: { state: UseAiSettings }) {
   return (
     <Card>
       <CardContent className="space-y-1 p-5">
-        <p className="text-sm font-medium">{state.loadError?.kind === "backend_unavailable" ? "No local backend on this host" : state.loadState === "unreachable" ? "Can't reach the local backend" : "Couldn't load the AI settings"}</p>
+        <p className="text-sm font-medium">{state.loadError?.kind === "backend_unavailable" ? "The backend is locked on this host" : state.loadState === "unreachable" ? "Can't reach the local backend" : "Couldn't load the AI settings"}</p>
         <p className="text-sm text-muted-foreground">{state.loadError?.message ?? "Make sure the app is running and reload this page."}</p>
       </CardContent>
     </Card>

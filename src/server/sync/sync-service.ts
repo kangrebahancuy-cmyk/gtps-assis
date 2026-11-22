@@ -182,7 +182,11 @@ export class SyncService {
         status = "cancelled";
       } else if (counts.failed > 0 || summary.truncated) {
         status = "completed_with_errors";
-        error = summary.truncated ? "Stopped at the page limit before all URLs were processed." : null;
+        error = summary.truncated
+          ? summary.stopReason === "time-limit"
+            ? "Stopped at the time limit of this host before all pages were processed. Run the sync again to continue."
+            : "Stopped at the page limit before all URLs were processed."
+          : null;
       } else {
         status = "completed";
       }

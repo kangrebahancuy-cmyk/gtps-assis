@@ -3,6 +3,7 @@
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { AccessBanner } from "@/components/layout/access-banner";
 import { Logo } from "@/components/layout/logo";
 import { SidebarContent } from "@/components/layout/sidebar-content";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -80,6 +81,8 @@ export function AppShell({ children }: AppShellProps) {
           </div>
           <ThemeToggle />
         </header>
+
+        <AccessBanner />
 
         <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
           {children}

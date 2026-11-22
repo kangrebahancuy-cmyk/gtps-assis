@@ -1,4 +1,5 @@
 import { AiError } from "@/server/ai/errors";
+import { hostedPlatform } from "@/server/platform";
 
 /**
  * Protects the local AI endpoints from other websites. A page you visit can
@@ -17,7 +18,8 @@ export function assertLocalRequest(request: Request, options: { mutation: boolea
   const env = options.env ?? process.env;
   const host = (request.headers.get("host") ?? new URL(request.url).host).toLowerCase();
   const hostname = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0] ?? "";
-  if (!allowedHosts(env).includes(hostname)) {
+  // On a hosting service the host name is the deployment's own; the access cookie (SameSite=Strict) and the Origin check below protect it.
+  if (hostedPlatform(env) === null && !allowedHosts(env).includes(hostname)) {
     // Stops DNS-rebinding: a hostile domain pointing at 127.0.0.1 still carries its own Host header.
     throw new AiError("invalid_input", "This endpoint only answers requests addressed to localhost. Set GTPS_ALLOWED_HOSTS to allow another host name.");
   }

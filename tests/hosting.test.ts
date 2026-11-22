@@ -8,7 +8,8 @@ import { createAiClient } from "../src/services/ai-client";
 import { register } from "../src/instrumentation";
 import { handleHealth } from "../src/server/health";
 import { hostedApiResponse, hostedPlatform, isStorageFailure, protectedRoute } from "../src/server/hosting";
-import { middleware } from "../src/middleware";
+import { sessionCookie } from "../src/server/access";
+import { authStatus, handleLogin, handleLogout, resetLoginLimiter } from "../src/server/auth-api";
 import { openDatabase } from "../src/server/db/database";
 
 const req = (path: string, init: RequestInit & { host?: string } = {}): Request => {
@@ -30,41 +31,85 @@ describe("hosted environments", () => {
     assert.equal(hostedPlatform(LOCAL), null);
   });
 
-  it("answers every /api route with 503 and an explanation, in the shape each client expects", async () => {
-    const plain = hostedApiResponse(req("/api/sync/status", { host: "gtps-assis.vercel.app" }), VERCEL);
+  const PASSWORD = "correct horse battery";
+  const HOST = "gtps-assis.vercel.app";
+  const UNLOCKED = { VERCEL: "1", GTPS_ACCESS_PASSWORD: PASSWORD } as Record<string, string>;
+  const cookie = (password = PASSWORD) => ({ cookie: sessionCookie(password, true).split(";")[0] as string });
+
+  it("keeps the backend locked (503, with the instruction) while no access password is configured, in the shape each client expects", async () => {
+    const plain = hostedApiResponse(req("/api/sync/status", { host: HOST }), VERCEL);
     assert.equal(plain?.status, 503);
     const plainBody = (await plain?.json()) as { error: string; code: string };
     assert.equal(plainBody.code, "backend_unavailable");
-    assert.match(plainBody.error, /no local backend/);
+    assert.match(plainBody.error, /GTPS_ACCESS_PASSWORD/);
 
     for (const path of ["/api/ai/settings", "/api/lua/check"]) {
-      const res = hostedApiResponse(req(path, { host: "gtps-assis.vercel.app" }), VERCEL);
+      const res = hostedApiResponse(req(path, { host: HOST }), VERCEL);
       assert.equal(res?.status, 503, path);
       const body = (await res?.json()) as { error: { kind: string; message: string; provider: null; retryable: boolean } };
       assert.equal(body.error.kind, "backend_unavailable");
-      assert.match(body.error.message, /no local backend/);
+      assert.match(body.error.message, /GTPS_ACCESS_PASSWORD/);
       assert.equal(body.error.retryable, false);
     }
+    assert.equal(hostedApiResponse(req("/api/docs/tree", { host: HOST }), { VERCEL: "1", GTPS_ACCESS_PASSWORD: "short" })?.status, 503, "a password shorter than 8 characters counts as not set");
   });
 
-  it("lets pages, the health check and everything else through, and does nothing at all when running locally", () => {
+  it("with a password set, a request without the session cookie gets 401; with it, it passes; health and login are always open", async () => {
+    const denied = hostedApiResponse(req("/api/docs/tree", { host: HOST }), UNLOCKED);
+    assert.equal(denied?.status, 401);
+    assert.equal(((await denied?.json()) as { code: string }).code, "auth_required");
+    assert.equal(hostedApiResponse(req("/api/docs/tree", { host: HOST, headers: cookie("another password!") }), UNLOCKED)?.status, 401, "a cookie made from another password is refused");
+    assert.equal(hostedApiResponse(req("/api/docs/tree", { host: HOST, headers: { cookie: "gtps_session=garbage" } }), UNLOCKED)?.status, 401);
+    assert.equal(hostedApiResponse(req("/api/docs/tree", { host: HOST, headers: cookie() }), UNLOCKED), undefined);
+    for (const path of ["/api/health", "/api/auth/status", "/api/auth/login"]) assert.equal(hostedApiResponse(req(path, { host: HOST }), UNLOCKED), undefined, path);
+  });
+
+  it("lets pages and everything else through, and does nothing at all when running locally", () => {
     assert.equal(hostedApiResponse(req("/api/health"), VERCEL), undefined);
     assert.equal(hostedApiResponse(req("/settings/providers"), VERCEL), undefined);
     assert.equal(hostedApiResponse(req("/api/ai/settings"), LOCAL), undefined);
   });
 
-  it("the middleware blocks on a host and passes locally", () => {
-    const before = process.env.VERCEL;
-    try {
-      process.env.VERCEL = "1";
-      assert.equal(middleware(req("/api/docs/tree"))?.status, 503);
-      assert.equal(middleware(req("/api/health")), undefined);
-      delete process.env.VERCEL;
-      assert.equal(middleware(req("/api/docs/tree")), undefined);
-    } finally {
-      if (before === undefined) delete process.env.VERCEL;
-      else process.env.VERCEL = before;
-    }
+  it("login: wrong passwords are refused and counted, the right one sets an HttpOnly, SameSite=Strict, Secure cookie", async () => {
+    resetLoginLimiter();
+    const login = (password: string, headers: Record<string, string> = {}) =>
+      handleLogin(UNLOCKED)(req("/api/auth/login", { host: HOST, method: "POST", body: JSON.stringify({ password }), headers: { "content-type": "application/json", "x-forwarded-proto": "https", ...headers } }));
+    assert.equal((await login("nope")).status, 401);
+    const ok = await login(PASSWORD);
+    assert.equal(ok.status, 200);
+    const setCookie = ok.headers.get("set-cookie") ?? "";
+    assert.match(setCookie, /^gtps_session=[0-9a-f]{64}; /);
+    assert.match(setCookie, /HttpOnly/);
+    assert.match(setCookie, /SameSite=Strict/);
+    assert.match(setCookie, /Secure/);
+    assert.doesNotMatch(setCookie, new RegExp(PASSWORD), "the password itself is never in the cookie");
+    // The cookie it hands out is accepted by the gate.
+    assert.equal(hostedApiResponse(req("/api/docs/tree", { host: HOST, headers: { cookie: setCookie.split(";")[0] as string } }), UNLOCKED), undefined);
+  });
+
+  it("login: five wrong passwords lock that client out, even for the right password, and another client is unaffected", async () => {
+    resetLoginLimiter();
+    const attempt = (password: string, ip: string) =>
+      handleLogin(UNLOCKED)(req("/api/auth/login", { host: HOST, method: "POST", body: JSON.stringify({ password }), headers: { "content-type": "application/json", "x-forwarded-for": ip } }));
+    for (let i = 0; i < 5; i += 1) assert.equal((await attempt("wrong", "1.1.1.1")).status, 401);
+    assert.equal((await attempt(PASSWORD, "1.1.1.1")).status, 429);
+    assert.equal((await attempt(PASSWORD, "2.2.2.2")).status, 200);
+    resetLoginLimiter();
+  });
+
+  it("login does nothing on a local copy, on a host without a password, or with a malformed body; status and logout report honestly", async () => {
+    resetLoginLimiter();
+    const post = (env: Record<string, string>, body: string) => handleLogin(env)(req("/api/auth/login", { host: HOST, method: "POST", body, headers: { "content-type": "application/json" } }));
+    assert.equal((await post({}, "{}")).status, 400);
+    assert.equal((await post({ VERCEL: "1" }, "{}")).status, 503);
+    assert.equal((await post(UNLOCKED, "not json")).status, 400);
+    assert.equal((await post(UNLOCKED, JSON.stringify({ password: 42 }))).status, 401);
+    assert.deepEqual(authStatus(req("/api/auth/status"), {}), { hosted: false, configured: true, authenticated: true });
+    assert.deepEqual(authStatus(req("/api/auth/status", { host: HOST }), { VERCEL: "1" }), { hosted: true, configured: false, authenticated: false });
+    assert.deepEqual(authStatus(req("/api/auth/status", { host: HOST }), UNLOCKED), { hosted: true, configured: true, authenticated: false });
+    assert.deepEqual(authStatus(req("/api/auth/status", { host: HOST, headers: cookie() }), UNLOCKED), { hosted: true, configured: true, authenticated: true });
+    const out = await handleLogout(UNLOCKED)(req("/api/auth/logout", { host: HOST, method: "POST" }));
+    assert.match(out.headers.get("set-cookie") ?? "", /Max-Age=0/);
   });
 
   it("the AI client turns that answer into a clear, non-retryable error instead of 'HTTP 503'", async () => {
@@ -72,7 +117,7 @@ describe("hosted environments", () => {
     const client = createAiClient({ fetch: async () => res.clone() });
     await assert.rejects(client.getSettings(), (error: { info?: { kind: string; message: string; retryable: boolean } }) => {
       assert.equal(error.info?.kind, "backend_unavailable");
-      assert.match(error.info?.message ?? "", /no local backend/);
+      assert.match(error.info?.message ?? "", /GTPS_ACCESS_PASSWORD/);
       assert.equal(error.info?.retryable, false);
       return true;
     });
@@ -105,6 +150,23 @@ describe("protected routes", () => {
     const res = await route(req("/api/docs/tree", { host: "gtps-assis.vercel.app" }));
     assert.equal(res.status, 503);
     assert.equal(ran, false);
+  });
+
+  it("on a host with a password: no cookie -> 401 and the handler does not run; with the cookie it runs on the deployment's own host name; another origin is still refused", async () => {
+    let ran = 0;
+    const env = { VERCEL: "1", GTPS_ACCESS_PASSWORD: "correct horse battery" };
+    const route = protectedRoute(() => {
+      ran += 1;
+      return Response.json({ ok: true });
+    }, { env });
+    const c = { cookie: sessionCookie("correct horse battery", true).split(";")[0] as string };
+    assert.equal((await route(req("/api/docs/tree", { host: "gtps-assis.vercel.app" }))).status, 401);
+    assert.equal(ran, 0);
+    assert.equal((await route(req("/api/docs/tree", { host: "gtps-assis.vercel.app", headers: c }))).status, 200);
+    assert.equal((await route(req("/api/x", { host: "gtps-assis.vercel.app", method: "POST", body: "{}", headers: { ...c, "content-type": "application/json", origin: "https://gtps-assis.vercel.app" } }))).status, 200);
+    assert.equal((await route(req("/api/x", { host: "gtps-assis.vercel.app", method: "POST", body: "{}", headers: { ...c, "content-type": "application/json", origin: "https://evil.example" } }))).status, 403);
+    assert.equal((await route(req("/api/x", { host: "gtps-assis.vercel.app", headers: { ...c, "sec-fetch-site": "cross-site" } }))).status, 403);
+    assert.equal(ran, 2);
   });
 
   it("a storage failure becomes 503 'storage_unavailable' and the path never reaches the client", async () => {

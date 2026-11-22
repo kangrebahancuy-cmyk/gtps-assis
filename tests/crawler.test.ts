@@ -169,3 +169,48 @@ describe("crawler: robots.txt and cancellation", () => {
     assert.equal(fetcher.requested.length, 2);
   });
 });
+
+describe("crawler: time limit of a serverless host", () => {
+  class SlowFetcher extends FakeFetcher {
+    override async fetchPage(...args: Parameters<FakeFetcher["fetchPage"]>) {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return super.fetchPage(...args);
+    }
+  }
+  const site = () => ({
+    [u("/docs")]: { html: body({ title: "Home", text: "Welcome home", links: ["/docs/a", "/docs/b"] }) },
+    [u("/docs/a")]: { html: body({ title: "A", text: "Page A text" }) },
+    [u("/docs/b")]: { html: body({ title: "B", text: "Page B text" }) },
+  });
+  const make = (fetcher: FakeFetcher, repo: ReturnType<typeof freshRepo>["repo"], over: Parameters<typeof testConfig>[0]) =>
+    new Crawler({ config: testConfig(over), repo, fetcher, extract: fakeExtract, sleep: async () => {}, loadRobots: async () => null });
+
+  it("stops at the deadline, reports why, keeps what it indexed and leaves the rest pending", async () => {
+    const { repo } = freshRepo();
+    const summary = await make(new SlowFetcher(site()), repo, { deadlineMs: 5 }).run("full");
+    assert.equal(summary.truncated, true);
+    assert.equal(summary.stopReason, "time-limit");
+    assert.equal(repo.listDocuments().length, 1);
+    assert.equal(repo.getStats().pending, 2);
+  });
+
+  it("an incremental run with resumeUnfinished continues with the waiting pages instead of starting over", async () => {
+    const { repo } = freshRepo();
+    await make(new SlowFetcher(site()), repo, { deadlineMs: 5 }).run("full");
+    const second = new FakeFetcher(site());
+    const summary = await make(second, repo, { resumeUnfinished: true }).run("incremental");
+    assert.deepEqual(second.requested.sort(), [u("/docs/a"), u("/docs/b")]);
+    assert.equal(summary.truncated, false);
+    assert.equal(repo.listDocuments().length, 3);
+    assert.equal(repo.getStats().pending, 0);
+  });
+
+  it("without resumeUnfinished an incremental run re-checks every page, as before", async () => {
+    const { repo } = freshRepo();
+    await make(new SlowFetcher(site()), repo, { deadlineMs: 5 }).run("full");
+    const second = new FakeFetcher(site());
+    await make(second, repo, {}).run("incremental");
+    assert.equal(second.requested.length, 3);
+  });
+});
+
