@@ -31,7 +31,7 @@ const EMPTY = (): StoredConfig => ({ keys: {}, defaults: { provider: null, model
 export class AiConfigStore {
   constructor(
     private readonly path: string,
-    private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly env: Record<string, string | undefined> = process.env,
   ) {}
 
   private read(): StoredConfig {
