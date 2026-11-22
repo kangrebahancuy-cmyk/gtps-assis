@@ -33,7 +33,9 @@ const pathOf = (file: string) => `/api/${relative(ROUTES_DIR, file).replace(/\/?
 const call = async (file: string, method: string, path: string, init: { host?: string; json?: unknown; headers?: Record<string, string> } = {}): Promise<Response> => {
   const mod = (await import(file)) as RouteModule;
   const handler = mod[method] as ((request: Request) => Promise<Response>) | undefined;
-  assert.equal(typeof handler, "function", `${file} exports ${method}`);
+  if (typeof handler !== "function") {
+    throw new TypeError("Route module does not export a callable handler for " + method);
+  }
   const host = init.host ?? "localhost:3000";
   const url = `http://${host}${path}`;
   const request = new Request(url, {
