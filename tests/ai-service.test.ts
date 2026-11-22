@@ -43,7 +43,7 @@ afterEach(() => {
 
 const configPath = () => join(dir, "ai-config.json");
 
-function makeService(env: NodeJS.ProcessEnv = {}, extra: Partial<ConstructorParameters<typeof AiService>[0]> = {}) {
+function makeService(env: Record<string, string | undefined> = {}, extra: Partial<ConstructorParameters<typeof AiService>[0]> = {}) {
   const store = new AiConfigStore(configPath(), env);
   const service = new AiService({
     store,

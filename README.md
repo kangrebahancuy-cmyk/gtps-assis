@@ -48,7 +48,7 @@ Then, in the app:
 Other commands:
 
 ```bash
-npm run typecheck   # tsc --noEmit
+npm run typecheck   # tsc over the app, tests and scripts (tsconfig.test.json); `next build` checks only the app (tsconfig.json)
 npm run lint        # next lint (ESLint)
 npm test            # server/unit/integration tests (node:test)
 npm run test:ui     # server-rendered UI tests

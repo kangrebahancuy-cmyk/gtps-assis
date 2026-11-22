@@ -42,7 +42,7 @@ before(async () => {
         calls.push(`${req.method} ${req.url}`);
         const request = new Request(`http://${req.headers.host}${req.url}`, { method: req.method });
         let response: Response;
-        if (mode === "hosted") response = hostedApiResponse(request, { VERCEL: "1" } as NodeJS.ProcessEnv) ?? Response.json({}, { status: 404 });
+        if (mode === "hosted") response = hostedApiResponse(request, { VERCEL: "1" }) ?? Response.json({}, { status: 404 });
         else if (mode === "storage-broken") response = errorResponse(request, 503, "storage_unavailable", STORAGE_MESSAGE);
         else response = Response.json(VIEW);
         res.writeHead(response.status, { "content-type": "application/json" });

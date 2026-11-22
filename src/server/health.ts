@@ -13,7 +13,7 @@ export interface Health {
 }
 
 export interface HealthDeps {
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
   node?: string;
   openDatabase: () => Db;
 }

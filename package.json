@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "node --import tsx --no-warnings --test \"tests/**/*.test.ts\"",
     "test:ui": "node --import tsx --no-warnings --test \"tests/ui/**/*.test.tsx\"",
     "scrape": "node --import tsx --no-warnings scripts/scrape.ts",

@@ -8,12 +8,12 @@ import { AiError } from "@/server/ai/errors";
 
 const DEFAULT_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
-function allowedHosts(env: NodeJS.ProcessEnv): string[] {
+function allowedHosts(env: Record<string, string | undefined>): string[] {
   const extra = (env.GTPS_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
   return [...DEFAULT_HOSTS, ...extra];
 }
 
-export function assertLocalRequest(request: Request, options: { mutation: boolean; env?: NodeJS.ProcessEnv } = { mutation: false }): void {
+export function assertLocalRequest(request: Request, options: { mutation: boolean; env?: Record<string, string | undefined> } = { mutation: false }): void {
   const env = options.env ?? process.env;
   const host = (request.headers.get("host") ?? new URL(request.url).host).toLowerCase();
   const hostname = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0] ?? "";
