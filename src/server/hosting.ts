@@ -17,7 +17,7 @@ const HOST_MARKERS: readonly [string, string][] = [
 ];
 
 /** The name of the hosting platform when this process runs on one, otherwise null. */
-export function hostedPlatform(env: NodeJS.ProcessEnv = process.env): string | null {
+export function hostedPlatform(env: Record<string, string | undefined> = process.env): string | null {
   for (const [name, label] of HOST_MARKERS) {
     const value = env[name];
     if (value !== undefined && value !== "" && value !== "0" && value.toLowerCase() !== "false") return label;
@@ -44,7 +44,7 @@ export function errorResponse(request: Request, status: number, code: string, me
 }
 
 /** Answers every /api request except /api/health on a hosting service; undefined means "carry on". */
-export function hostedApiResponse(request: Request, env: NodeJS.ProcessEnv = process.env): Response | undefined {
+export function hostedApiResponse(request: Request, env: Record<string, string | undefined> = process.env): Response | undefined {
   if (hostedPlatform(env) === null) return undefined;
   let pathname: string;
   try {
@@ -65,7 +65,7 @@ export function isStorageFailure(error: unknown): boolean {
 }
 
 export interface ProtectedOptions {
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
   log?: (message: string) => void;
 }
 
