@@ -1,24 +1,26 @@
 # GTPS Assistant
 
-An AI-powered development assistant for GTPS Cloud developers.
+An AI-powered development assistant for GTPS Cloud developers: it indexes the GTPS Cloud documentation locally,
+answers questions with citations, generates and checks Lua scripts, and gives you a Lua workspace. It is built to
+run **on your own computer** (the backend holds your API keys and a SQLite database).
 
-> **Status: Step 3 (documentation synchronization engine) added on top of Steps 1 and 2.**
-> There is **no AI provider and no Lua generator yet**. Controls that depend
-> on them are disabled and labelled as unavailable.
+> **Status: Step 11 (final QA, security and production readiness) done.** Read "Step 11 audit" below for what was and
+> was not verified. Generated Lua is **never executed** by this application.
 
 ## Tech stack
 
-- Next.js 15 (App Router) and React 19
-- TypeScript (strict)
-- Tailwind CSS 3 with shadcn/ui-style components (Radix primitives)
-- Lucide icons
-- Zustand for state (persisted to `localStorage`)
-- Monaco Editor (`@monaco-editor/react`) for the Lua workspace
+- Next.js 15 (App Router) and React 19, TypeScript (strict)
+- Tailwind CSS 3 with shadcn/ui-style components (Radix primitives), Lucide icons
+- Zustand for UI state; preferences in `localStorage`; chats and Lua files in IndexedDB
+- SQLite (`node:sqlite`, FTS5) for the documentation index; cheerio + optional Playwright Chromium for scraping
+- Monaco Editor (`@monaco-editor/react`) for the Lua workspace, with a built-in basic editor as a fallback
 
 ## Requirements
 
-- Node.js 22.13 or newer (the scraper uses the built-in `node:sqlite`)
+- Node.js 22.13 or newer (the backend uses the built-in `node:sqlite`)
 - npm 10 or newer
+- Optional: Chromium for client-rendered documentation pages (`npx playwright install chromium`)
+- Optional: a Gemini and/or Groq API key (the app starts without them; AI features then say what is missing)
 
 ## Installation
 
@@ -26,17 +28,109 @@ An AI-powered development assistant for GTPS Cloud developers.
 git clone https://github.com/kangrebahancuy-cmyk/gtps-assis.git
 cd gtps-assis
 npm install
+cp .env.example .env.local     # optional: keys can also be entered in Settings -> AI Providers
 ```
 
-## Development
+## Running locally
 
 ```bash
-npm run dev        # start the dev server at http://localhost:3000
-npm run typecheck  # TypeScript check (tsc --noEmit)
-npm run lint       # ESLint
-npm run build      # production build
-npm run start      # serve the production build
+npm run dev                    # development: http://localhost:3000
+npm run build && npm run start # production: http://localhost:3000
 ```
+
+Then, in the app:
+
+1. **Settings -> AI Providers**: paste a Gemini and/or Groq key, press **Test**, pick the default provider and model.
+2. **Settings -> Synchronization** (or **Documentation -> Start Scraping**): run the first full sync.
+   Later runs are incremental (only changed pages are reprocessed) and can be scheduled.
+3. Use **Chat**, **Documentation**, **Lua Workspace** and **Settings** from the sidebar.
+
+Other commands:
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm run lint        # next lint (ESLint)
+npm test            # server/unit/integration tests (node:test)
+npm run test:ui     # server-rendered UI tests
+npm run test:browser# real-Chromium tests (needs: npx playwright install chromium)
+npm run scrape      # command-line sync (see "Documentation scraper")
+```
+
+## Environment variables
+
+All are optional. Copy `.env.example` to `.env.local`. Never commit real keys (`.env*` and `data/` are gitignored).
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `GEMINI_API_KEY`, `GROQ_API_KEY` | Provider keys (a key saved in Settings takes precedence) | none |
+| `GTPS_AI_CONFIG_PATH` | Where saved keys and the default provider/model are stored | `data/ai-config.json` |
+| `GTPS_DB_PATH` | SQLite file of the documentation index | `data/gtps-assistant.db` |
+| `GTPS_ALLOWED_HOSTS` | Extra host names allowed to call the local API (comma separated). `localhost`, `127.0.0.1`, `[::1]` are always allowed | none |
+| `GTPS_HOSTED` | Set to `1` to force "hosted mode" (backend disabled). It is also detected automatically on Vercel, Netlify, AWS Lambda and Cloud Run | unset |
+
+## API provider setup
+
+- **Gemini**: create a key at <https://aistudio.google.com/apikey>.
+- **Groq**: create a key at <https://console.groq.com/keys>.
+- Enter it in **Settings -> AI Providers** (stored only in `data/ai-config.json`, owner-readable, gitignored) or in
+  `.env.local`. The browser only ever receives a masked hint (`...abcd`) and whether a key exists.
+- Models are listed from what the provider reports (cached 10 minutes; if a refresh fails the older list is shown marked
+  "stale" with the error). There is no invented fallback list. Keys are never part of a backup export, a log line or an error message.
+
+## Documentation scraper setup
+
+- Source: `https://dash.gtps.cloud/docs`, https only, same origin, never outside `/docs`. More domains can be approved
+  in **Settings -> Documentation** (each needs an explicit confirmation).
+- Politeness: 1 request/second by default, `robots.txt` is honoured, retries with backoff, at most 5 MiB per page,
+  at most 5 redirects (each hop is re-validated), private/loopback addresses are refused.
+- Safety limit: 2000 pages per run. If the crawl hits the limit the run is marked as failed with
+  "Stopped at the page limit", it is never silently reported as complete.
+- Client-rendered pages need Chromium (`npx playwright install chromium`); without it the scraper uses plain HTTP and
+  reports the pages it could not render.
+
+## Hosted deployments (Vercel and similar)
+
+The backend is local by design. On a host (Vercel, Netlify, Lambda, Cloud Run, or `GTPS_HOSTED=1`) every `/api/*`
+route except `/api/health` answers **503** `{"code":"backend_unavailable"}` and the pages explain that instead of
+showing "HTTP 500". What still works there, in the browser only: chats history, the Lua workspace, preferences,
+backup/restore. What does **not** work there: AI providers, synchronization, documentation search and the script
+check. For all of those, run the app locally as shown above. `GET /api/health` reports the mode and database state.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| Settings pages show "backend unavailable" | You opened a hosted copy. Run locally (see "Running locally"). |
+| "The local backend could not open its database" (503 `storage_unavailable`) | The data folder is not writable or the file is damaged. Set `GTPS_DB_PATH` to a writable path, or delete the damaged file (it is rebuilt by the next sync). |
+| `node:sqlite` not found | Node.js is older than 22.13. Upgrade Node. |
+| "Invalid API key" | Re-enter the key in Settings -> AI Providers and press Test. |
+| "Quota exceeded" / "rate limited" | Wait for the time shown, or switch provider/model; the app does not retry quota errors endlessly. |
+| Documentation is empty | Run a sync. Search and citations only use indexed pages. |
+| A sync was interrupted | The next start marks it `interrupted`, keeps already indexed pages, and a new sync continues normally. |
+| Monaco does not load | It is fetched from a CDN; offline the basic editor is used (no colours). |
+| "Host not allowed" from the local API | You opened the app by another name; add it to `GTPS_ALLOWED_HOSTS`. |
+| Restore says the backup is invalid | The file is not a `gtps-assistant-backup`, is corrupt (checksum), or has an unsupported version. Nothing is changed. |
+
+## Architecture overview
+
+```
+Browser (React, IndexedDB, localStorage)
+   |  fetch /api/*   (same origin, JSON; SSE for chat streaming)
+   v
+Next.js route handlers  --  protectedRoute(): hosted check -> local-request check (Host, Origin, JSON type on writes) -> handler
+   |
+   +-- server/ai       providers (Gemini, Groq), unified service, cooldown/retry, key store (never leaves the server)
+   +-- server/rag      retrieval over the SQLite FTS5 index, ranking, prompt building, citations
+   +-- server/lua      generator workflow and static script check (no Lua binary, nothing is run)
+   +-- server/docs     documentation explorer (tree, search, viewer, status)
+   +-- server/sync     sync service, scheduler, run history
+   +-- server/scraper  crawler, fetchers (HTTP + optional Chromium), extractor, SSRF guard
+   +-- server/db       SQLite schema, migrations, repositories
+```
+
+Key rules: provider keys exist only in the backend; every outgoing request is checked against the approved documentation
+domains (including every redirect hop); documentation text is treated as untrusted data in prompts; generated code is
+only displayed, copied or saved, never executed.
 
 ## What works in this step
 
@@ -709,6 +803,84 @@ the earlier theme setting is migrated. Several tabs stay in sync through the `st
 - `.tsx` panels have no separate server-render tests; they are covered through the Chromium suite.
 - The checksum is not authentication; a backup is plain text you should keep private (it contains your chats and code).
 
+## Step 11 audit (final QA, security, production readiness)
+
+Everything below was measured in the development sandbox (no network, no `npm install`); "Not verified" lists what
+that sandbox could not do.
+
+### Fixed during the audit
+
+- **HTTP 500 on a hosted copy (Vercel)**: the app starts SQLite and a scheduler at boot, which cannot work on a
+  read-only serverless disk. On a host the backend is now disabled cleanly (503 `backend_unavailable`, explained in
+  the UI); `/api/health` reports the mode. Every API route goes through `protectedRoute()`.
+- **SSRF**: redirects used to be followed without re-checking the target. Now each hop is validated against the
+  approved domains (https only, no private/loopback hosts), at most 5 hops, 5 MiB per page, `robots.txt` only via
+  same-origin redirects; the Chromium renderer is confined the same way (a redirect to an unapproved host is never
+  requested).
+- **Performance**: the Lua script check was quadratic (8000 lines: 1330 ms -> 105 ms); the basic editor rebuilt every
+  line number on each keystroke (typing is now 3-5x faster on large files).
+- **Crawler limit**: raised from 500 to 2000 pages per run, and hitting it is reported as an error, not as success.
+- Error responses and logs pass through `redactSecrets` (provider keys never appear).
+
+### Security checks (automated in `tests/security-audit.test.ts`, `tests/ssrf.test.ts`, `tests/routes.test.ts`)
+
+| Area | What is enforced |
+| --- | --- |
+| API keys | Only the backend reads them; the browser gets a masked hint; not in backups, logs, errors or git; config file mode 600 |
+| Local access | Host allow-list (DNS rebinding), same-origin only, cross-site refused, JSON content type on writes, body-size limits |
+| SSRF / crawler | Approved https domains only (default `gtps.cloud`), per-hop redirect validation, private hosts refused, size cap |
+| HTML | No `innerHTML`/`document.write`; the single `dangerouslySetInnerHTML` is the constant theme script; Markdown is parsed to React nodes |
+| Prompt injection | Documentation text is quoted as untrusted data in prompts; instructions inside it are not followed |
+| Input / import | Every route validates its input; backup files are validated (format, version, checksum, sizes) before anything changes |
+| Code execution | No `eval`, `new Function`, `vm`, child processes or Lua interpreter; generated Lua is only shown, copied or saved |
+
+### Error handling (each has an automated test)
+
+Invalid API key, quota/rate limit, network failure, scraping failure (4xx/5xx/timeout), empty documentation search,
+malformed Lua, invalid or corrupt backup, damaged/unwritable database (503 `storage_unavailable` or a clear message),
+and an interrupted synchronization (closed as `interrupted` on the next start, indexed pages kept).
+
+### Measured performance (synthetic data, this sandbox)
+
+| Measurement | Result |
+| --- | --- |
+| Sync of 3000 synthetic pages (local fake site, no network delay) | 2.4 s, 3000 indexed, RSS 92 -> 142 MB |
+| Documentation search over 3000 pages (FTS5) | 4.1 ms average, 9.2 ms p95 |
+| Documentation tree / status | 32 ms / 6 ms |
+| RAG retrieval | 9.4 ms average, 17 ms p95 |
+| Lua check, 4000 lines | 50 ms |
+| IndexedDB chat search | 573 ms at 20,000 messages, 2.7 s at 100,000 (it reads the stored messages, not an index) |
+| Chat window, opening a conversation | 292 ms (50 messages), 522 ms (200), 899 ms (600); the list is not virtualized (17,000 DOM nodes at 600) |
+
+Real-network scraping speed is limited by the polite delay (1 request/second), not by these numbers.
+
+### Test results (this sandbox)
+
+| Suite | Result |
+| --- | --- |
+| Server / unit / integration (`tests/*.test.ts`) | 698 pass, 1 fail (`extractor.test.ts`: `cheerio` is not installed in the sandbox; not a code failure) |
+| Server-rendered UI (`tests/ui`) | 58 / 58 |
+| Chromium: chat 48, IndexedDB 16, generator 16, workspace 38, workspace IndexedDB 12, settings 35, hosted mode 7, SSRF rendering 4 | 176 / 176 |
+
+### Not verified (honest limits)
+
+- `npm install`, `next lint`, `next build` and the real `tsc` with all type packages were **not** run (no network):
+  TypeScript was checked with stubs, ESLint rules with an AST-based stand-in (0 errors in `src/`; the test helpers
+  contain a few `any`, and `next lint` does not lint `tests/`). Run `npm install && npm run typecheck && npm run lint
+  && npm run build && npm test` yourself before release.
+- The **real** `https://dash.gtps.cloud/docs` was never reached, so the real number of documentation pages is
+  unknown here: run a sync and read the count in **Documentation -> Status**. Real Gemini and Groq were never called
+  (only faithful fakes), so answer quality and real quota behaviour are untested.
+- Real Monaco, Radix and Tailwind output were replaced by stand-ins; how pages **look** was not verified.
+- No Lua interpreter exists here: the script check is static analysis, not proof that a script runs in GTPS.
+- The backup checksum detects damage, it is not authentication.
+
+### Known limitations
+
+- Hosted deployments only serve the browser-side features (see "Hosted deployments").
+- Large chat histories are loaded into memory for search and are not virtualized.
+- Single-user, single-machine design: no accounts, no multi-user access control.
+
 ## Project structure
 
 ```
@@ -750,3 +922,4 @@ src/
 8. **Step 8:** Lua script generator (documentation workflow, script check, actions).
 9. **Step 9:** Lua workspace (Monaco editor, files in IndexedDB, AI assistant with documentation retrieval).
 10. **Step 10:** settings and local data management (provider, documentation, chat, appearance, backup and restore).
+11. **Step 11:** final QA, security audit, error handling, performance and production readiness.

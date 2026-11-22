@@ -41,6 +41,7 @@ export function errorResponse(error: unknown, provider: ProviderId | null = null
 }
 
 export async function readJson(request: Request, maxBytes: number): Promise<unknown> {
+  if (Number(request.headers.get("content-length")) > maxBytes) throw new AiError("invalid_input", "The request body is too large.");
   const text = await request.text();
   if (text.length > maxBytes) throw new AiError("invalid_input", "The request body is too large.");
   try {

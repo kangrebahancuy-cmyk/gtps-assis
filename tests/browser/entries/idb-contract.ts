@@ -72,3 +72,35 @@ w.unavailable = async () => {
     return (e as Error).message;
   }
 };
+
+/** Step 11 performance: a large history. Returns the real timings in milliseconds. */
+w.bench = async (conversations: number, perConversation: number): Promise<Record<string, number>> => {
+  const repo = await fresh("bench");
+  const timings: Record<string, number> = {};
+  const time = async <T,>(name: string, f: () => Promise<T>): Promise<T> => {
+    const t = performance.now();
+    const r = await f();
+    timings[name] = Math.round((performance.now() - t) * 10) / 10;
+    return r;
+  };
+  try {
+    const exported = Array.from({ length: conversations }, (_, c) => ({
+      ...conv(`c${c}`, { updatedAt: 1000 + c, title: `Conversation ${c} about player teleport` }),
+      messages: Array.from({ length: perConversation }, (_, m) => msg(`c${c}`, m, { content: `message ${m} of conversation ${c}: ` + "Lua teleport player world ".repeat(20) })),
+    }));
+    await time("importMs", () => repo.importConversations(exported as never));
+    const list = await time("listConversationsMs", () => repo.listConversations());
+    const msgs = await time("getMessagesMs", () => repo.getMessages(`c${Math.floor(conversations / 2)}`));
+    const hits = await time("searchMs", () => repo.search("teleport", 50));
+    await time("appendMessageMs", () => repo.commit({ put: [msg("c0", perConversation + 1)] }));
+    await time("deleteConversationMs", () => repo.deleteConversation("c1"));
+    await time("snapshotMs", () => repo.snapshot());
+    timings.conversations = list.length;
+    timings.messagesInChat = msgs.length;
+    timings.searchHits = hits.length;
+    timings.totalMessages = conversations * perConversation;
+    return timings;
+  } finally {
+    repo.close();
+  }
+};

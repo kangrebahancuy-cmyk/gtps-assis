@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Repository } from "@/server/db/repository";
 import type { ScraperConfig } from "@/server/scraper/config";
 import type { ExtractedPage } from "@/server/scraper/extractor";
-import { FetchError, type PageFetcher } from "@/server/scraper/fetcher";
+import { FetchError, MAX_REDIRECTS, readBodyCapped, type PageFetcher } from "@/server/scraper/fetcher";
 import { RateLimiter, type Sleep, defaultSleep } from "@/server/scraper/rate-limiter";
 import { ALLOW_ALL, parseRobots, type RobotsPolicy } from "@/server/scraper/robots";
 import { isDocumentationUrl, normalizeUrl } from "@/server/scraper/url";
@@ -49,19 +49,29 @@ export interface CrawlerDeps {
   runId?: string;
 }
 
-async function defaultLoadRobots(
+export async function defaultLoadRobots(
   origin: string,
   config: ScraperConfig,
   signal?: AbortSignal,
 ): Promise<string | null> {
   const timeout = AbortSignal.timeout(config.timeoutMs);
-  const response = await fetch(`${origin}/robots.txt`, {
-    headers: { "user-agent": config.userAgent },
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-  });
-  if (response.status === 404 || response.status === 410) return null;
-  if (!response.ok) throw new Error(`robots.txt returned HTTP ${response.status}`);
-  return response.text();
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  // Redirects are followed by hand and only within the same origin (robots.txt may move, but not to another host).
+  let url = `${origin}/robots.txt`;
+  for (let hop = 0; ; hop += 1) {
+    const response = await fetch(url, { headers: { "user-agent": config.userAgent }, redirect: "manual", signal: combined });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      await response.body?.cancel().catch(() => undefined);
+      const next = location ? new URL(location, url) : null;
+      if (!next || next.origin !== origin || hop >= MAX_REDIRECTS) throw new Error("robots.txt redirects somewhere that is not allowed");
+      url = next.toString();
+      continue;
+    }
+    if (response.status === 404 || response.status === 410) return null;
+    if (!response.ok) throw new Error(`robots.txt returned HTTP ${response.status}`);
+    return readBodyCapped(response, 512 * 1024);
+  }
 }
 
 const isGone = (error: unknown): error is FetchError =>

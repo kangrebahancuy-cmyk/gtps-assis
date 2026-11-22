@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { findAll, offsetOfLine, pickMatch, replaceAll } from "@/lib/workspace/find";
@@ -9,6 +9,24 @@ import type { EditorHandle, EditorProps } from "./editor-types";
 
 /** Line height for a font size (20px at the default 13px). Both the gutter and the textarea use it so numbers stay aligned. */
 const lineHeightFor = (fontSize: number): number => Math.round(fontSize * 1.54);
+
+/**
+ * The line numbers. Memoized on the number of lines and the lines with problems, so typing inside a line of a large
+ * file does not rebuild thousands of elements on every keystroke (that made typing in a 10,000-line file take ~200 ms
+ * per key; see the Step 11 performance notes).
+ */
+const LineNumbers = memo(function LineNumbers({ count, errorKey }: { count: number; errorKey: string }) {
+  const errors = useMemo(() => new Set(errorKey === "" ? [] : errorKey.split(",").map(Number)), [errorKey]);
+  return (
+    <>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className={cn(errors.has(i + 1) && "font-bold text-red-400")}>
+          {i + 1}
+        </div>
+      ))}
+    </>
+  );
+});
 
 /**
  * The basic editor: a plain textarea with line numbers, Tab indentation, Ctrl/Cmd+S and its own
@@ -21,7 +39,7 @@ export function FallbackEditor({ path, value, onChange, onSave, onReady, onSelec
   const gutter = useRef<HTMLDivElement>(null);
   const [find, setFind] = useState<{ open: boolean; replace: boolean }>({ open: false, replace: false });
   const lineCount = useMemo(() => value.split("\n").length, [value]);
-  const errorLines = useMemo(() => new Set(problems.map((p) => p.line)), [problems]);
+  const errorKey = useMemo(() => [...new Set(problems.map((p) => p.line))].sort((a, b) => a - b).join(","), [problems]);
 
   // The callbacks change on every render of the parent; the handle given to the parent must not.
   const latest = useRef({ onChange, onSelection });
@@ -142,11 +160,7 @@ export function FallbackEditor({ path, value, onChange, onSave, onReady, onSelec
           className="select-none overflow-hidden py-3 pl-2 pr-3 text-right font-mono text-neutral-500"
           style={{ lineHeight: `${LINE_HEIGHT}px`, fontSize: `${Math.max(9, fontSize - 1)}px` }}
         >
-          {Array.from({ length: lineCount }, (_, i) => (
-            <div key={i} className={cn(errorLines.has(i + 1) && "font-bold text-red-400")}>
-              {i + 1}
-            </div>
-          ))}
+          <LineNumbers count={lineCount} errorKey={errorKey} />
         </div>
         <textarea
           ref={area}

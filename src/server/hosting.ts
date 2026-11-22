@@ -1,5 +1,5 @@
 import { assertLocalRequest } from "@/server/ai/guard";
-import { AiError } from "@/server/ai/errors";
+import { AiError, redactSecrets } from "@/server/ai/errors";
 import { BACKEND_UNAVAILABLE, HOSTED_MESSAGE, STORAGE_MESSAGE, STORAGE_UNAVAILABLE } from "@/lib/hosting";
 
 /**
@@ -93,7 +93,7 @@ export function protectedRoute<R extends Request>(handler: (request: R) => Respo
     try {
       return await handler(request);
     } catch (error) {
-      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      const detail = redactSecrets(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
       log(`[gtps-assistant] ${request.method} ${new URL(request.url).pathname} failed: ${detail}`);
       if (isStorageFailure(error)) return errorResponse(request, 503, STORAGE_UNAVAILABLE, STORAGE_MESSAGE);
       return errorResponse(request, 500, "internal", "Unexpected error in the local backend. Details are in the server log.");

@@ -30,7 +30,7 @@ export function getSyncRuntime(): SyncRuntime {
     const service = new SyncService({
       repo,
       config: createConfig({ startUrl: docsSource.get().sourceUrl }),
-      createFetcher: (config) => new HybridFetcher(config),
+      createFetcher: (config) => new HybridFetcher(config, () => docsSource.get().extraDomains),
     });
     holder[KEY] = { repo, service, scheduler: new Scheduler({ repo, service }), docsSource };
   }

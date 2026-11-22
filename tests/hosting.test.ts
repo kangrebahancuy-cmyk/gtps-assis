@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import { createAiClient } from "../src/services/ai-client";
@@ -171,6 +174,13 @@ describe("health check", () => {
   });
 });
 
+/** A database path that can never be created: its parent folder would have to live inside a regular file (ENOTDIR on every OS). */
+const UNWRITABLE_DB = (() => {
+  const file = join(mkdtempSync(join(tmpdir(), "gtps-unwritable-")), "plain-file");
+  writeFileSync(file, "not a folder");
+  return join(file, "data", "db.sqlite");
+})();
+
 describe("server start", () => {
   const withEnv = async (vars: Record<string, string | undefined>, fn: () => Promise<void>) => {
     const saved: Record<string, string | undefined> = {};
@@ -190,7 +200,7 @@ describe("server start", () => {
   };
 
   it("does nothing on a hosting service, even when the data folder cannot be written", async () => {
-    await withEnv({ NEXT_RUNTIME: "nodejs", VERCEL: "1", GTPS_DB_PATH: "/proc/definitely/not/writable/db.sqlite" }, async () => {
+    await withEnv({ NEXT_RUNTIME: "nodejs", VERCEL: "1", GTPS_DB_PATH: UNWRITABLE_DB }, async () => {
       const warn = console.warn;
       const seen: string[] = [];
       console.warn = (m: string) => void seen.push(String(m));
@@ -204,7 +214,7 @@ describe("server start", () => {
   });
 
   it("does not stop the server from starting when the database cannot be opened", async () => {
-    await withEnv({ NEXT_RUNTIME: "nodejs", VERCEL: undefined, GTPS_HOSTED: undefined, GTPS_DB_PATH: "/proc/definitely/not/writable/db.sqlite" }, async () => {
+    await withEnv({ NEXT_RUNTIME: "nodejs", VERCEL: undefined, GTPS_HOSTED: undefined, GTPS_DB_PATH: UNWRITABLE_DB }, async () => {
       const error = console.error;
       const seen: string[] = [];
       console.error = (m: string) => void seen.push(String(m));

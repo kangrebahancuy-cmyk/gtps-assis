@@ -158,6 +158,8 @@ function checkPlaceholders(code: string, add: Add): void {
 
 function checkApis(parsed: LuaParse, catalog: Catalog, add: Add): ApiUse[] {
   const uses = new Map<string, ApiUse>();
+  const seenLines = new Map<ApiUse, Set<number>>(); // O(1) "is this line already listed" instead of scanning the list
+  const locals = new Set(parsed.locals); // built once, not once per call
   const scriptNames = new Set<string>([...parsed.functions.map((f) => f.name ?? ""), ...parsed.globalsAssigned]);
   const scriptMembers = new Set<string>([...parsed.memberFunctions, ...parsed.functions.map((f) => f.chain[f.chain.length - 1] ?? "")]);
 
@@ -165,12 +167,18 @@ function checkApis(parsed: LuaParse, catalog: Catalog, add: Add): ApiUse[] {
     const key = `${status}|${name}`;
     const existing = uses.get(key);
     if (existing) {
-      if (!existing.lines.includes(line)) existing.lines.push(line);
+      const seen = seenLines.get(existing) as Set<number>;
+      if (!seen.has(line)) {
+        seen.add(line);
+        existing.lines.push(line);
+      }
       return;
     }
-    uses.set(key, {
+    const created: ApiUse = {
       name, status, documentedAs: null, signature: null, kind: null, source: null, lines: [line], suggestion: null, ...extra,
-    });
+    };
+    seenLines.set(created, new Set([created.lines[0] as number]));
+    uses.set(key, created);
   };
   const documented = (name: string, line: number, entries: Entry[]) => {
     const e = entries[0] as Entry;
@@ -180,7 +188,7 @@ function checkApis(parsed: LuaParse, catalog: Catalog, add: Add): ApiUse[] {
   };
 
   for (const call of parsed.calls) {
-    checkCall(call, catalog, { scriptNames, scriptMembers, locals: new Set(parsed.locals), record, documented, add });
+    checkCall(call, catalog, { scriptNames, scriptMembers, locals, record, documented, add });
     checkEventStrings(call, catalog, { record, documented, add });
   }
   for (const fn of parsed.functions) checkHandlerDefinition(fn, catalog, { record, documented, add });

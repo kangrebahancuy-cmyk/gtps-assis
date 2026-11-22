@@ -36,6 +36,7 @@ const fail = (message: string, status: number, code?: string): Response => json(
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 async function readBody(request: Request, required: boolean): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get("content-length")) > 16_384) throw new SettingsError("The request body is too large.");
   const text = await request.text();
   if (text.length > 16_384) throw new SettingsError("The request body is too large.");
   if (text.trim() === "") {

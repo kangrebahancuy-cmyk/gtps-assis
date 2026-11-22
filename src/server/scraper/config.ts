@@ -47,7 +47,7 @@ export function createConfig(
     timeoutMs: 20_000,
     maxRetries: 2,
     retryBackoffMs: 1500,
-    maxPages: 500,
+    maxPages: 2000,
     renderMode: "auto",
     minContentLength: 20,
     ...overrides,
