@@ -1,4 +1,3 @@
-import { hostedPlatform } from "@/server/platform";
 import { extractScript } from "@/lib/lua/extract";
 import { assertLocalRequest } from "@/server/ai/guard";
 import { AiError, toErrorInfo } from "@/server/ai/errors";
@@ -81,10 +80,6 @@ export const handleSaveConfig = (service: AiService) =>
         if (value === "" || value === null || value === undefined) continue; // blank field: keep the saved key
         keys[validateProvider(id)] = validateApiKey(value);
       }
-    }
-    if (Object.keys(keys).length > 0 && hostedPlatform() !== null) {
-      // Disk on a host is temporary and per instance, so a key typed here would vanish or be missing on another instance.
-      throw new AiError("invalid_input", "On a hosting service keys cannot be saved from this page. Add GEMINI_API_KEY and/or GROQ_API_KEY to the host's environment variables and redeploy.");
     }
     let defaults: AiDefaults | null | undefined;
     if (body.defaults === null) defaults = null;

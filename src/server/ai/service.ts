@@ -1,4 +1,4 @@
-import { AiConfigStore } from "@/server/ai/config-store";
+import type { ConfigStore } from "@/server/ai/config-store";
 import { AiError, toErrorInfo } from "@/server/ai/errors";
 import { defaultSleep, resetDelayMs, type Sleep } from "@/server/ai/http";
 import type { AiProvider, ProviderContext } from "@/server/ai/provider";
@@ -27,7 +27,7 @@ export function createProviders(): ProviderMap {
 }
 
 export interface AiServiceOptions {
-  store: AiConfigStore;
+  store: ConfigStore;
   providers?: ProviderMap;
   fetch?: typeof fetch;
   sleep?: Sleep;
@@ -66,7 +66,7 @@ function fingerprint(key: string): string {
  * which provider answers is a configuration detail.
  */
 export class AiService {
-  private readonly store: AiConfigStore;
+  private readonly store: ConfigStore;
   private readonly providers: ProviderMap;
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: Sleep;

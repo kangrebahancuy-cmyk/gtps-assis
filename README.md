@@ -96,11 +96,12 @@ The backend also runs on a serverless host, with these differences from running 
 1. In the Vercel project: **Settings -> Environment Variables**, add
    - `GTPS_ACCESS_PASSWORD` (**required**, at least 8 characters). The address is public and the backend can spend your
      provider keys, so until this is set every backend route answers 503 and only the browser features work.
-   - `GEMINI_API_KEY` and/or `GROQ_API_KEY`. Keys cannot be typed into Settings on a host (the disk there is
-     temporary); the page says so.
+   - Provider keys need **no** environment variable: type them in **Settings -> AI Providers** (see "Keys on a host").
+     `GEMINI_API_KEY` / `GROQ_API_KEY` still work as an optional fallback for every visitor.
 2. Redeploy, open the site and use the banner at the top: enter the password (a 14-day, HttpOnly, SameSite=Strict
    cookie; five wrong passwords lock a client out for ten minutes).
-3. **Settings -> Synchronization -> Sync now**.
+3. **Settings -> AI Providers**: paste a key, **Save**, **Test**.
+4. **Settings -> Synchronization -> Sync now**.
 
 What is different on a host (all verified by tests except where noted):
 
@@ -109,7 +110,7 @@ What is different on a host (all verified by tests except where noted):
 | Storage | The documentation index is a SQLite file in `/tmp`. It is **temporary and per instance**: Vercel may recycle the instance, and then the index is empty again and must be re-synced. Chats, Lua files and preferences are in your browser and are not affected. |
 | Sync | Runs inside one request (max 60 s): 250 ms between requests, HTTP only (no Chromium), stops at 45 s and says "Stopped at the time limit". Press **Sync now** again to continue where it stopped. There is no scheduler and no automatic sync. A large documentation site may need several presses. |
 | Status | The progress shown while a sync runs lives in one instance. If the next request lands on another instance the page can show "idle" although a sync is still running. |
-| Keys | Only from environment variables; never sent to the browser. |
+| Keys on a host | Typed in Settings, they are stored in an **encrypted, HttpOnly cookie of your browser** (AES-256-GCM, key derived from `GTPS_ACCESS_PASSWORD`). Page scripts cannot read it, nothing is written to GitHub or the server disk, and without the password it cannot be opened. Consequences: keys are per browser (not shared with other devices), clearing cookies removes them, and changing the password makes them unreadable (add them again). |
 | Not verified | An actual Vercel deployment: this sandbox has no network, so the behaviour on Vercel (cookies, `/tmp`, `after()`, 60 s limit, `node:sqlite` on the Vercel Node runtime) is covered by tests of the code, not by a real deployment. |
 
 If you need a durable, shared index or unattended scheduled syncs, run the app locally (or on a server of your own with
@@ -121,7 +122,7 @@ a persistent disk, where `GTPS_HOSTED` is not set and the app behaves exactly as
 
 | Symptom | Cause and fix |
 | --- | --- |
-| Settings pages say "The backend is locked on this host" | Hosted copy: set `GTPS_ACCESS_PASSWORD` (and provider keys) in the host's environment variables, redeploy, then unlock with the banner. Or run locally. |
+| Settings pages say "The backend is locked on this host" | Hosted copy: set `GTPS_ACCESS_PASSWORD` in the host's environment variables, redeploy, then unlock with the banner. Or run locally. |
 | "Enter the access password" | Use the banner at the top of the page. |
 | Documentation is empty again on Vercel | `/tmp` was recycled. Press Sync now (repeat until the time-limit message disappears). |
 | "The local backend could not open its database" (503 `storage_unavailable`) | The data folder is not writable or the file is damaged. Set `GTPS_DB_PATH` to a writable path, or delete the damaged file (it is rebuilt by the next sync). |

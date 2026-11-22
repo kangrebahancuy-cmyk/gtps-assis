@@ -92,7 +92,7 @@ describe("keys never reach the browser", () => {
       const text = readFileSync(file, "utf8");
       assert.match(text, /runtime\s*=\s*"nodejs"/, rel(file));
       assert.match(text, /dynamic\s*=\s*"force-dynamic"/, rel(file));
-      assert.match(text, /getAiService\(\)/, rel(file));
+      assert.match(text, /withAiService\(request/, rel(file));
       assert.doesNotMatch(text, /process\.env/, `${rel(file)} should not read the environment itself`);
     }
   });

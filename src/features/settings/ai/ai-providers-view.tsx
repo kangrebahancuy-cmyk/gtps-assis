@@ -162,7 +162,7 @@ export function AiProvidersView(props: AiProvidersViewProps) {
         </p>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        Saved keys are stored as plain text in <code>data/ai-config.json</code> on this computer (owner-only permissions, excluded from git). Anyone who can read your files can read them.
+        Run locally, saved keys are stored as plain text in <code>data/ai-config.json</code> on this computer (owner-only permissions, excluded from git); anyone who can read your files can read them. On a hosting service they are kept in an encrypted cookie of this browser instead (never readable by page scripts, not shared with other devices).
       </p>
     </div>
   );

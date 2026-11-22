@@ -14,6 +14,15 @@ export const ENV_KEY_NAMES: Record<ProviderId, string> = {
   groq: "GROQ_API_KEY",
 };
 
+/** What the AI service needs from a key store: the file store locally, the cookie store on a hosting service. */
+export interface ConfigStore {
+  resolveKey(provider: ProviderId): ResolvedKey | null;
+  getDefaults(): AiDefaults;
+  setKey(provider: ProviderId, key: string): void;
+  removeKey(provider: ProviderId): void;
+  setDefaults(defaults: AiDefaults): void;
+}
+
 export interface ResolvedKey {
   key: string;
   source: "saved" | "environment";
@@ -28,7 +37,7 @@ const EMPTY = (): StoredConfig => ({ keys: {}, defaults: { provider: null, model
  * plaintext: it protects against accidental commits and other local users,
  * not against someone who can read your files as you.
  */
-export class AiConfigStore {
+export class AiConfigStore implements ConfigStore {
   constructor(
     private readonly path: string,
     private readonly env: Record<string, string | undefined> = process.env,
